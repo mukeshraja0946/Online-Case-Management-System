@@ -1,0 +1,57 @@
+# Sample Screenshots Description
+
+Since this is a backend-heavy project, here are descriptions of the key screens you will see when running the application.
+
+## 1. Landing Page (index.php)
+- **Visuals**: A clean, centered card on a gradient background (Teal/Blue).
+- **Elements**: "OCMS" Title, Project Description.
+- **Buttons**:
+  - "Login" (Primary Color) -> Redirects to Login Page.
+  - "Register" (Outline) -> Redirects to Register Page.
+
+## 2. Login Page (auth/login.php)
+- **Visuals**: A centered card with a Green header "OCMS Login".
+- **Fields**: Email, Password.
+- **Dropdown**: "Login As" (Student / Staff).
+- **Action**: "Login" button (Green).
+
+## 3. Registration Page (auth/register.php)
+- **Visuals**: Similar to Login, with a Blue header.
+- **Fields**: Full Name, Email, Password, Role.
+- **Dynamic Behavior**:
+  - If "Student" is selected: A "Roll Number" field appears.
+  - If "Staff" is selected: "Roll Number" field is hidden.
+- **Action**: "Register" button.
+
+## 4. Student Dashboard (student/dashboard.php)
+- **Navbar**: Blue background. Links: Dashboard, Add Case, My Cases, Case History, Logout.
+- **Content**: A welcome alert box behaving as a quick greeting.
+
+## 5. Add Case Page (student/add_case.php)
+- **Form**:
+  - Student Name (Read-only, pre-filled).
+  - Roll Number (Pre-filled).
+  - Case Type (Dropdown: Academic, Disciplinary, Hostel, Other).
+  - Description (Textarea).
+- **Action**: "Submit Case" button.
+
+## 6. My Cases Page (student/my_cases.php)
+- **Table**: Lists all submitted cases.
+- **Columns**: Case ID, Type, Description, Date, Status, Remark.
+- **Badges**:
+  - Pending: Yellow badge.
+  - Approved: Green badge.
+  - Rejected: Red badge.
+
+## 7. Staff Dashboard (staff/dashboard.php)
+- **Navbar**: Red background (to distinguish from Student). Links: Dashboard, Received Cases, Approved, Rejected, Logout.
+- **Content**: Welcome message.
+
+## 8. Received Cases (staff/received_cases.php)
+- **List**: Table of cases with status "Pending".
+- **Actions**:
+  - "Approve" button (Green) -> Opens a Modal to enter remarks.
+  - "Reject" button (Red) -> Opens a Modal to enter remarks.
+
+## 9. Approved/Rejected Cases Views
+- **Tables**: Read-only lists of historically processed cases.

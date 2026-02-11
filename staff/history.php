@@ -1,0 +1,149 @@
+<?php
+session_start();
+require_once '../config/db.php';
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
+    header("Location: ../auth/login.php");
+    exit();
+}
+
+// Handle Delete Request
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
+    // Individual delete disabled as per request
+}
+
+$sql = "SELECT * FROM cases WHERE status IN ('Approved', 'Rejected') AND staff_visible = 1 AND deleted_by_staff = 0 AND deleted_by_student = 0 ORDER BY created_at ASC";
+$result = $conn->query($sql);
+if (!$result) {
+    die("Query failed: " . $conn->error);
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case History - OCMS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="../assets/css/style.css?v=<?php echo time(); ?>" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="wrapper">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h4><img src="../assets/img/ocms.png" alt="Logo" style="height: 75px;"></h4>
+            </div>
+            
+            <div class="sidebar-menu">
+                <div class="menu-label">Menu</div>
+                <a href="dashboard.php"><i class="fas fa-th-large"></i> Dashboard</a>
+                <a href="received_cases.php"><i class="fas fa-inbox"></i> Received Cases</a>
+                <a href="approved_cases.php"><i class="fas fa-check-circle"></i> Approved</a>
+                <a href="rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected</a>
+                <a href="history.php" class="active"><i class="fas fa-history"></i> History</a>
+                
+                <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
+            </div>
+        </div>
+        
+        <div class="main_content">
+            <!-- Topbar -->
+            <div class="topbar">
+                <div class="search-bar">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="dashboard-search" placeholder="Search history...">
+                </div>
+                
+                <div class="user-nav">
+                    <button class="nav-icon-btn" id="theme-toggle"><i class="fas fa-moon"></i></button>
+                    <button class="nav-icon-btn"><i class="fas fa-bell"></i></button>
+                    
+                    <div class="user-profile">
+                        <div class="avatar" style="background: var(--secondary-color);"><?php echo strtoupper(substr($_SESSION['name'], 0, 1)); ?></div>
+                        <div style="font-size: 0.9rem; font-weight: 600; padding-right: 10px;">
+                            <?php echo htmlspecialchars($_SESSION['name']); ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="container mt-5">
+        <h4 class="mb-4">Case History (Processed)</h4>
+        
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <?php if(isset($success)): ?>
+                    <div class="alert alert-success py-2"><?php echo $success; ?></div>
+                <?php endif; ?>
+                <?php if(isset($error)): ?>
+                    <div class="alert alert-danger py-2"><?php echo $error; ?></div>
+                <?php endif; ?>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead>
+                            <tr class="text-center">
+                                <th>S.No</th>
+                                <th>Student Name</th>
+                                <th>Roll No</th>
+                                <th>Case Type</th>
+                                <th>Description</th>
+                                <th>Attachment</th>
+                                <th>Remark</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if ($result->num_rows > 0): ?>
+                                <?php $i = 1; while($row = $result->fetch_assoc()): ?>
+                                    <tr class="text-center">
+                                        <td><?php echo $i++; ?></td>
+                                        <td><?php echo htmlspecialchars($row['student_name']); ?></td>
+                                        <td><?php echo htmlspecialchars($row['roll_no']); ?></td>
+                                        <td><?php echo htmlspecialchars($row['case_type']); ?></td>
+                                        <td><?php echo htmlspecialchars($row['description']); ?></td>
+                                        <td>
+                                            <?php if (!empty($row['attachment'])): ?>
+                                                <a href="../uploads/<?php echo htmlspecialchars($row['attachment']); ?>" target="_blank"><i class="fas fa-paperclip"></i> View</a>
+                                            <?php else: ?>
+                                                <span class="text-muted">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo htmlspecialchars($row['staff_remark'] ?? 'N/A'); ?></td>
+                                        <td>
+                                            <?php if($row['status'] == 'Approved'): ?>
+                                                <span class="badge bg-success">Approved</span>
+                                            <?php elseif($row['status'] == 'Rejected'): ?>
+                                                <span class="badge bg-danger">Rejected</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'])); ?></td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="9" class="text-center">No processed cases found.</td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php if ($result->num_rows > 0): ?>
+                    <div class="d-flex justify-content-end mt-3">
+                        <form action="clear_history.php" method="POST" onsubmit="return confirm('Are you sure you want to delete ALL processed case history? This cannot be undone.');">
+                            <button type="submit" class="btn btn-link text-danger text-decoration-underline p-0 border-0"><i class="fas fa-trash-alt me-1"></i>Clear History</button>
+                        </form>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+    <script src="../assets/js/theme.js"></script>
+    <script src="../assets/js/search.js"></script>
+    <script src="../assets/js/notifications.js"></script>
+</body>
+</html>
