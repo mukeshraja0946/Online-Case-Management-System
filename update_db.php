@@ -1,20 +1,26 @@
 <?php
 require_once 'config/db.php';
 
-// Check if column exists
-$checkSql = "SHOW COLUMNS FROM cases LIKE 'is_hidden'";
-$result = $conn->query($checkSql);
+// Check if profile_photo column exists, if not add it, if yes modify it
+$check_col = "SHOW COLUMNS FROM users LIKE 'profile_photo'";
+$result = $conn->query($check_col);
 
 if ($result->num_rows == 0) {
     // Column doesn't exist, add it
-    $sql = "ALTER TABLE cases ADD COLUMN is_hidden TINYINT(1) DEFAULT 0";
+    $sql = "ALTER TABLE users ADD COLUMN profile_photo TEXT DEFAULT NULL";
     if ($conn->query($sql) === TRUE) {
-        echo "Column 'is_hidden' added successfully.";
+        echo "Column 'profile_photo' added successfully.";
     } else {
         echo "Error adding column: " . $conn->error;
     }
 } else {
-    echo "Column 'is_hidden' already exists.";
+    // Column exists, modify it to TEXT to hold long URLs
+    $sql = "ALTER TABLE users MODIFY COLUMN profile_photo TEXT DEFAULT NULL";
+    if ($conn->query($sql) === TRUE) {
+        echo "Column 'profile_photo' updated to TEXT type successfully.";
+    } else {
+        echo "Error updating column: " . $conn->error;
+    }
 }
 
 $conn->close();

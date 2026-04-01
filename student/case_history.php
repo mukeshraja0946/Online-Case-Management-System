@@ -8,7 +8,15 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
 }
 
 $student_id = $_SESSION['user_id'];
-$student_name = $_SESSION['name'];
+// Fetch fresh student data from DB
+$u_stmt = $conn->prepare("SELECT name, roll_no, profile_photo FROM users WHERE id = ?");
+$u_stmt->bind_param("i", $student_id);
+$u_stmt->execute();
+$u_res = $u_stmt->get_result()->fetch_assoc();
+
+$student_name = $u_res['name'];
+$roll_no = $u_res['roll_no'];
+$profile_photo = $u_res['profile_photo'];
 
 // Fetch processed cases for history. History is independent of other lists.
 $sql = "SELECT * FROM cases WHERE student_id = ? AND status != 'Pending' AND is_hidden_history = 0 ORDER BY created_at DESC";
@@ -24,6 +32,7 @@ $result = $stmt->get_result();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Case History - OCMS</title>
+    <link rel="icon" type="image/png" href="../assets/img/OCMS_logo.png">
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Icons -->
@@ -39,7 +48,7 @@ $result = $stmt->get_result();
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <h4><img src="../assets/img/ocms.png" alt="Logo" style="height: 75px;"></h4>
+                <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
             </div>
             
             <div class="sidebar-menu">
@@ -49,7 +58,10 @@ $result = $stmt->get_result();
                 <a href="my_cases.php"><i class="fas fa-file-alt"></i> My Cases</a>
                 <a href="approved_cases.php"><i class="fas fa-check-circle"></i> Approved Cases</a>
                 <a href="rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected Cases</a>
+                
+                <div class="menu-label menu-bottom-section mt-3">Account</div>
                 <a href="case_history.php" class="active"><i class="fas fa-history"></i> History</a>
+                <a href="../auth/profile.php"><i class="fas fa-cog"></i> Settings</a>
                 
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
@@ -65,20 +77,39 @@ $result = $stmt->get_result();
                 </div>
                 
                 <div class="user-nav">
-                    <button class="nav-icon-btn" id="theme-toggle"><i class="fas fa-moon"></i></button>
+
                     <button class="nav-icon-btn"><i class="fas fa-bell"></i></button>
                     
-                    <div class="user-profile">
-                        <div class="avatar"><?php echo strtoupper(substr($_SESSION['name'], 0, 1)); ?></div>
-                        <div style="font-size: 0.9rem; font-weight: 600; padding-right: 10px;">
-                            <?php echo htmlspecialchars($_SESSION['name']); ?>
+                    <a href="../auth/profile.php?view=1" class="text-decoration-none">
+                        <div class="user-profile">
+                            <div class="avatar shadow-sm" style="overflow: hidden;">
+                                <?php if($profile_photo): ?>
+                                    <?php 
+                                        $photo = trim($profile_photo);
+                                        $pic_src = (strpos($photo, 'http') === 0) 
+                                            ? $photo 
+                                            : "../uploads/profile/" . $photo;
+                                    ?>
+                                    <img src="<?php echo htmlspecialchars($pic_src); ?>" style="width: 100%; height: 100%; object-fit: cover;" referrerpolicy="no-referrer">
+                                <?php else: ?>
+                                    <?php echo strtoupper(substr($student_name, 0, 1)); ?>
+                                <?php endif; ?>
+                            </div>
+                            <div class="d-flex flex-column text-center" style="line-height: 1.2;">
+                                <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
+                                    <?php echo htmlspecialchars($student_name); ?>
+                                </span>
+                                <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
+                                    <?php echo htmlspecialchars($roll_no); ?>
+                                </span>
+                            </div>
                         </div>
-                    </div>
+                    </a>
                 </div>
             </div>
 
-            <div class="container mt-5">
-                <h4 class="mb-4">Case History (Processed)</h4>
+            <div class="container mt-2">
+                <h4 class="mb-2">Case History (Processed)</h4>
                 
                 <div class="card shadow-sm border-0">
                     <div class="card-body">
@@ -96,12 +127,12 @@ $result = $stmt->get_result();
                                         <th>S.No</th>
                                         <th>Student Name</th>
                                         <th>Roll No</th>
+                                        <th>Date & Time</th>
                                         <th>Case Type</th>
                                         <th>Description</th>
                                         <th>Attachment</th>
                                         <th>Remark</th>
                                         <th>Status</th>
-                                        <th>Date</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -111,6 +142,7 @@ $result = $stmt->get_result();
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo htmlspecialchars($student_name); ?></td>
                                                 <td><?php echo htmlspecialchars($row['roll_no'] ?? '-'); ?></td>
+                                                <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'])); ?></td>
                                                 <td><?php echo htmlspecialchars($row['case_type']); ?></td>
                                                 <td><?php echo htmlspecialchars($row['description']); ?></td>
                                                 <td>
@@ -129,7 +161,6 @@ $result = $stmt->get_result();
                                                     ?>
                                                     <span class="badge <?php echo $badge_class; ?>"><?php echo $row['status']; ?></span>
                                                 </td>
-                                                <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'])); ?></td>
                                             </tr>
                                         <?php endwhile; ?>
                                     <?php else: ?>

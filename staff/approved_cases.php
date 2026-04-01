@@ -7,6 +7,17 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
     exit();
 }
 
+$staff_uid = $_SESSION['user_id'];
+// Fetch fresh staff data from DB
+$u_stmt = $conn->prepare("SELECT name, staff_id, profile_photo FROM users WHERE id = ?");
+$u_stmt->bind_param("i", $staff_uid);
+$u_stmt->execute();
+$u_res = $u_stmt->get_result()->fetch_assoc();
+
+$staff_name = $u_res['name'];
+$staff_id = $u_res['staff_id'];
+$profile_photo = $u_res['profile_photo'];
+
 // Handle Delete Request
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
     $delete_id = $_POST['delete_id'];
@@ -29,6 +40,7 @@ $result = $conn->query($sql);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Approved Cases - OCMS</title>
+    <link rel="icon" type="image/png" href="../assets/img/OCMS_logo.png">
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Icons -->
@@ -43,7 +55,7 @@ $result = $conn->query($sql);
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <h4><img src="../assets/img/ocms.png" alt="Logo" style="height: 75px;"></h4>
+                <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
             </div>
             
             <div class="sidebar-menu">
@@ -52,7 +64,10 @@ $result = $conn->query($sql);
                 <a href="received_cases.php"><i class="fas fa-inbox"></i> Received Cases</a>
                 <a href="approved_cases.php" class="active"><i class="fas fa-check-circle"></i> Approved</a>
                 <a href="rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected</a>
+                
+                <div class="menu-label menu-bottom-section mt-3">Account</div>
                 <a href="history.php"><i class="fas fa-history"></i> History</a>
+                <a href="../auth/profile.php"><i class="fas fa-cog"></i> Settings</a>
                 
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
@@ -68,20 +83,39 @@ $result = $conn->query($sql);
                 </div>
                 
                 <div class="user-nav">
-                    <button class="nav-icon-btn" id="theme-toggle"><i class="fas fa-moon"></i></button>
+
                     <button class="nav-icon-btn"><i class="fas fa-bell"></i></button>
                     
-                    <div class="user-profile">
-                        <div class="avatar" style="background: var(--secondary-color);"><?php echo strtoupper(substr($_SESSION['name'], 0, 1)); ?></div>
-                        <div style="font-size: 0.9rem; font-weight: 600; padding-right: 10px;">
-                            <?php echo htmlspecialchars($_SESSION['name']); ?>
+                    <a href="../auth/profile.php?view=1" class="text-decoration-none">
+                        <div class="user-profile">
+                            <div class="avatar shadow-sm" style="overflow: hidden; background: var(--secondary-color);">
+                                <?php if($profile_photo): ?>
+                                    <?php 
+                                        $photo = trim($profile_photo);
+                                        $pic_src = (strpos($photo, 'http') === 0) 
+                                            ? $photo 
+                                            : "../uploads/profile/" . $photo;
+                                    ?>
+                                    <img src="<?php echo htmlspecialchars($pic_src); ?>" style="width: 100%; height: 100%; object-fit: cover;" referrerpolicy="no-referrer">
+                                <?php else: ?>
+                                    <?php echo strtoupper(substr($staff_name, 0, 1)); ?>
+                                <?php endif; ?>
+                            </div>
+                            <div class="d-flex flex-column text-center" style="line-height: 1.2;">
+                                <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
+                                    <?php echo htmlspecialchars($staff_name); ?>
+                                </span>
+                                <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
+                                    <?php echo htmlspecialchars($staff_id ?? ''); ?>
+                                </span>
+                            </div>
                         </div>
-                    </div>
+                    </a>
                 </div>
             </div>
 
-            <div class="container mt-5">
-                <h4 class="mb-4">Approved Cases</h4>
+            <div class="container mt-2">
+                <h4 class="mb-2">Approved Cases</h4>
                 
                 <?php if(isset($success)): ?>
                     <div class="alert alert-success py-2"><?php echo $success; ?></div>
@@ -99,12 +133,12 @@ $result = $conn->query($sql);
                                         <th>S.No</th>
                                         <th>Student Name</th>
                                         <th>Roll No</th>
+                                        <th>Date & Time</th>
                                         <th>Case Type</th>
                                         <th>Description</th>
                                         <th>Attachment</th>
                                         <th>Remark</th>
                                         <th>Status</th>
-                                        <th>Date</th>
                                         <th>Action</th>
                                     </tr>
                                 </thead>
@@ -115,7 +149,12 @@ $result = $conn->query($sql);
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo htmlspecialchars($row['student_name']); ?></td>
                                                 <td><?php echo htmlspecialchars($row['roll_no'] ?? '-'); ?></td>
-                                                <td><?php echo htmlspecialchars($row['case_type']); ?></td>
+                                                <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'])); ?></td>
+                                                <td>
+                                                    <span class="category-badge cat-<?php echo htmlspecialchars($row['case_type']); ?>">
+                                                        <?php echo htmlspecialchars($row['case_type']); ?>
+                                                    </span>
+                                                </td>
                                                 <td><?php echo htmlspecialchars($row['description']); ?></td>
                                                 <td>
                                                     <?php if (!empty($row['attachment'])): ?>
@@ -128,7 +167,6 @@ $result = $conn->query($sql);
                                                 <td>
                                                     <span class="badge bg-success"><?php echo $row['status']; ?></span>
                                                 </td>
-                                                <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'])); ?></td>
                                                 <td>
                                                     <form method="POST" onsubmit="return confirm('Are you sure?');" style="display:inline;">
                                                         <input type="hidden" name="delete_id" value="<?php echo $row['id']; ?>">

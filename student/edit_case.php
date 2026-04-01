@@ -30,10 +30,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $roll_no = $_POST['roll_no'];
     $case_type = $_POST['case_type'];
     $description = $_POST['description'];
+    $incident_date = $_POST['incident_date'];
+    $incident_time = $_POST['incident_time'];
+    $full_incident_date = $incident_date . ' ' . $incident_time . ':00';
 
-    $update_sql = "UPDATE cases SET student_name = ?, roll_no = ?, case_type = ?, description = ? WHERE id = ? AND student_id = ?";
+    $update_sql = "UPDATE cases SET student_name = ?, roll_no = ?, incident_date = ?, case_type = ?, description = ? WHERE id = ? AND student_id = ?";
     $update_stmt = $conn->prepare($update_sql);
-    $update_stmt->bind_param("ssssii", $student_name, $roll_no, $case_type, $description, $id, $_SESSION['user_id']);
+    $update_stmt->bind_param("sssssii", $student_name, $roll_no, $full_incident_date, $case_type, $description, $id, $_SESSION['user_id']);
     
     if ($update_stmt->execute()) {
         $_SESSION['success'] = "Case updated successfully!";
@@ -51,6 +54,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Case - OCMS</title>
+    <link rel="icon" type="image/png" href="../assets/img/OCMS_logo.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -76,6 +80,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                             <div class="mb-3">
                                 <label>Roll Number</label>
                                 <input type="text" name="roll_no" class="form-control" value="<?php echo htmlspecialchars($case['roll_no']); ?>" required>
+                            </div>
+                            <div class="mb-3">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label>Date</label>
+                                        <input type="date" name="incident_date" class="form-control" value="<?php echo date('Y-m-d', strtotime($case['incident_date'])); ?>" required>
+                                    </div>
+                                    <div class="col-6">
+                                        <label>Time</label>
+                                        <input type="time" name="incident_time" class="form-control" value="<?php echo date('H:i', strtotime($case['incident_date'])); ?>" required>
+                                    </div>
+                                </div>
                             </div>
                             <div class="mb-3">
                                 <label>Case Type</label>

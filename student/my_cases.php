@@ -8,21 +8,44 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
 }
 
 $student_id = $_SESSION['user_id'];
-$student_name = $_SESSION['name'];
+// Fetch fresh student data from DB
+$u_stmt = $conn->prepare("SELECT name, roll_no, profile_photo FROM users WHERE id = ?");
+$u_stmt->bind_param("i", $student_id);
+$u_stmt->execute();
+$u_res = $u_stmt->get_result()->fetch_assoc();
 
-// Handle Delete Request
+$student_name = $u_res['name'];
+$roll_no = $u_res['roll_no'];
+$profile_photo = $u_res['profile_photo'];
+
+// Handle Delete Request (Request Permission from Admin)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
     $delete_id = $_POST['delete_id'];
-    $del_stmt = $conn->prepare("UPDATE cases SET student_my_cases_visible = 0 WHERE id = ? AND student_id = ?");
-    $del_stmt->bind_param("ii", $delete_id, $student_id);
-    if ($del_stmt->execute()) {
-        $success = "Case removed from this list.";
-    } else {
-        $error = "Error removing case.";
+    
+    // Check if already requested
+    $check_stmt = $conn->prepare("SELECT deletion_requested FROM cases WHERE id = ? AND student_id = ?");
+    $check_stmt->bind_param("ii", $delete_id, $student_id);
+    $check_stmt->execute();
+    $check_res = $check_stmt->get_result();
+    
+    if ($check_res->num_rows > 0) {
+        $row = $check_res->fetch_assoc();
+        if ($row['deletion_requested'] == 1) {
+             $error = "Deletion already requested. Waiting for Admin approval.";
+        } else {
+             // Set deletion_requested flag instead of hiding immediately
+            $del_stmt = $conn->prepare("UPDATE cases SET deletion_requested = 1 WHERE id = ? AND student_id = ?");
+            $del_stmt->bind_param("ii", $delete_id, $student_id);
+            if ($del_stmt->execute()) {
+                $success = "Deletion request sent to Admin. Case will be removed upon approval.";
+            } else {
+                $error = "Error sending deletion request.";
+            }
+        }
     }
 }
 
-$sql = "SELECT * FROM cases WHERE student_id = ? AND student_my_cases_visible = 1 ORDER BY created_at DESC";
+$sql = "SELECT * FROM cases WHERE student_id = ? AND student_my_cases_visible = 1 ORDER BY created_at ASC";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param("i", $student_id);
 $stmt->execute();
@@ -35,6 +58,7 @@ $result = $stmt->get_result();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Cases - OCMS</title>
+    <link rel="icon" type="image/png" href="../assets/img/OCMS_logo.png">
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Icons -->
@@ -50,7 +74,7 @@ $result = $stmt->get_result();
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <h4><img src="../assets/img/ocms.png" alt="Logo" style="height: 75px;"></h4>
+                <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
             </div>
             
             <div class="sidebar-menu">
@@ -60,7 +84,10 @@ $result = $stmt->get_result();
                 <a href="my_cases.php" class="active"><i class="fas fa-file-alt"></i> My Cases</a>
                 <a href="approved_cases.php"><i class="fas fa-check-circle"></i> Approved Cases</a>
                 <a href="rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected Cases</a>
+                
+                <div class="menu-label menu-bottom-section mt-3">Account</div>
                 <a href="case_history.php"><i class="fas fa-history"></i> History</a>
+                <a href="../auth/profile.php"><i class="fas fa-cog"></i> Settings</a>
                 
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
@@ -76,20 +103,39 @@ $result = $stmt->get_result();
                 </div>
                 
                 <div class="user-nav">
-                    <button class="nav-icon-btn" id="theme-toggle"><i class="fas fa-moon"></i></button>
+
                     <button class="nav-icon-btn"><i class="fas fa-bell"></i></button>
                     
-                    <div class="user-profile">
-                        <div class="avatar"><?php echo strtoupper(substr($_SESSION['name'], 0, 1)); ?></div>
-                        <div style="font-size: 0.9rem; font-weight: 600; padding-right: 10px;">
-                            <?php echo htmlspecialchars($_SESSION['name']); ?>
+                    <a href="../auth/profile.php?view=1" class="text-decoration-none">
+                        <div class="user-profile">
+                            <div class="avatar shadow-sm" style="overflow: hidden;">
+                                <?php if($profile_photo): ?>
+                                    <?php 
+                                        $photo = trim($profile_photo);
+                                        $pic_src = (strpos($photo, 'http') === 0) 
+                                            ? $photo 
+                                            : "../uploads/profile/" . $photo;
+                                    ?>
+                                    <img src="<?php echo htmlspecialchars($pic_src); ?>" style="width: 100%; height: 100%; object-fit: cover;" referrerpolicy="no-referrer">
+                                <?php else: ?>
+                                    <?php echo strtoupper(substr($student_name, 0, 1)); ?>
+                                <?php endif; ?>
+                            </div>
+                            <div class="d-flex flex-column text-center" style="line-height: 1.2;">
+                                <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
+                                    <?php echo htmlspecialchars($student_name); ?>
+                                </span>
+                                <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
+                                    <?php echo htmlspecialchars($roll_no); ?>
+                                </span>
+                            </div>
                         </div>
-                    </div>
+                    </a>
                 </div>
             </div>
 
-            <div class="container mt-5">
-                <h4 class="mb-4">My Submitted Cases</h4>
+            <div class="container mt-2">
+                <h4 class="mb-2">My Submitted Cases</h4>
                 
                 <div class="card shadow-sm border-0">
                     <div class="card-body">
@@ -107,23 +153,34 @@ $result = $stmt->get_result();
                                         <th>S.No</th>
                                         <th>Student Name</th>
                                         <th>Roll No</th>
+                                        <th>Updated Date & Time</th>
                                         <th>Case Type</th>
                                         <th>Description</th>
                                         <th>Attachment</th>
                                         <th>Remark</th>
+                                        <th>Submitted</th>
                                         <th>Status</th>
-                                        <th>Date</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if ($result->num_rows > 0): ?>
-                                        <?php $i = 1; while($row = $result->fetch_assoc()): ?>
-                                            <tr class="text-center">
+                                        <?php 
+                                            $highlight_id = isset($_GET['highlight_id']) ? (int)$_GET['highlight_id'] : 0;
+                                            $i = 1; 
+                                            while($row = $result->fetch_assoc()): 
+                                                $is_highlighted = ($row['id'] == $highlight_id);
+                                        ?>
+                                            <tr class="text-center <?php echo $is_highlighted ? 'highlighted-row' : ''; ?>" <?php echo $is_highlighted ? 'id="row-'.$row['id'].'"' : ''; ?>>
                                                 <td><?php echo $i++; ?></td>
                                                 <td><?php echo htmlspecialchars($student_name); ?></td>
                                                 <td><?php echo htmlspecialchars($row['roll_no'] ?? '-'); ?></td>
-                                                <td><?php echo htmlspecialchars($row['case_type']); ?></td>
+                                                <td><?php echo date('d M, Y h:i A', strtotime($row['incident_date'])); ?></td>
+                                                <td>
+                                                    <span class="category-badge cat-<?php echo htmlspecialchars($row['case_type']); ?>">
+                                                        <?php echo htmlspecialchars($row['case_type']); ?>
+                                                    </span>
+                                                </td>
                                                 <td><?php echo htmlspecialchars($row['description']); ?></td>
                                                 <td>
                                                     <?php if (!empty($row['attachment'])): ?>
@@ -133,6 +190,7 @@ $result = $stmt->get_result();
                                                     <?php endif; ?>
                                                 </td>
                                                 <td><?php echo htmlspecialchars($row['staff_remark'] ?? 'N/A'); ?></td>
+                                                <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'])); ?></td>
                                                 <td>
                                                     <?php 
                                                         $badge_class = 'bg-secondary';
@@ -142,15 +200,19 @@ $result = $stmt->get_result();
                                                     ?>
                                                     <span class="badge <?php echo $badge_class; ?>"><?php echo $row['status']; ?></span>
                                                 </td>
-                                                <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'])); ?></td>
                                                 <td>
                                                     <?php if($row['status'] == 'Pending'): ?>
                                                         <a href="edit_case.php?id=<?php echo $row['id']; ?>" class="text-primary me-2 text-decoration-underline">Edit</a>
                                                     <?php endif; ?>
-                                                    <form method="POST" onsubmit="return confirm('Are you sure?');" style="display:inline;">
-                                                        <input type="hidden" name="delete_id" value="<?php echo $row['id']; ?>">
-                                                        <button type="submit" class="text-danger border-0 bg-transparent p-0 text-decoration-underline">Delete</button>
-                                                    </form>
+                                                    
+                                                    <?php if (isset($row['deletion_requested']) && $row['deletion_requested'] == 1): ?>
+                                                        <span class="text-muted small fst-italic">Deletion Requested</span>
+                                                    <?php else: ?>
+                                                        <form method="POST" onsubmit="return confirm('Request Admin to delete this case?');" style="display:inline;">
+                                                            <input type="hidden" name="delete_id" value="<?php echo $row['id']; ?>">
+                                                            <button type="submit" class="text-danger border-0 bg-transparent p-0 text-decoration-underline">Delete</button>
+                                                        </form>
+                                                    <?php endif; ?>
                                                 </td>
                                             </tr>
                                         <?php endwhile; ?>
@@ -168,5 +230,22 @@ $result = $stmt->get_result();
     <script src="../assets/js/theme.js"></script>
     <script src="../assets/js/search.js"></script>
     <script src="../assets/js/notifications.js"></script>
+    <script>
+        // Auto-scroll to highlighted row
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const highlightId = urlParams.get('highlight_id');
+            if (highlightId) {
+                const element = document.getElementById('row-' + highlightId);
+                if (element) {
+                    // Add flash effect class after a short delay
+                    setTimeout(() => {
+                        element.classList.add('flash-effect');
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 500);
+                }
+            }
+        });
+    </script>
 </body>
 </html>

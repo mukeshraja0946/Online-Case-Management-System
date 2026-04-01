@@ -1,0 +1,16 @@
+name,email,register_no,department,role,password
+John Doe,john@gmail.com,22IT001,IT,student,123456
+Mary Raj,mary@gmail.com,STAFF001,IT,staff,staff@123
+Bob Smith,bob@gmail.com,22CS005,CS,student,password123
+Alice Johnson,alice@gmail.com,STAFF002,English,staff,admin@123
+S.No,Name,Email,Register No,Department,Role
+1,Arun Kumar,arun.kumar@gmail.com,22IT001,IT,student
+2,Bharath S,bharath.s@gmail.com,22IT002,IT,student
+3,Charan Raj,charan.raj@gmail.com,22IT003,CSE,student
+4,Deepak M,deepak.m@gmail.com,22IT004,ECE,student
+5,Eswar R,eswar.r@gmail.com,22IT005,EEE,student
+6,Fazil Khan,fazil.khan@gmail.com,22IT006,MECH,student
+7,Gokul P,gokul.p@gmail.com,22IT007,CIVIL,student
+8,Hari Prasad,hari.prasad@gmail.com,22IT008,IT,student
+9,Irfan Ali,irfan.ali@gmail.com,22IT009,CSE,student
+10,Jeeva N,jeeva.n@gmail.com,22IT010,ECE,student
