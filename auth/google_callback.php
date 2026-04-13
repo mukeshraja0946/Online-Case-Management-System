@@ -74,18 +74,12 @@ if (isset($_GET['code'])) {
         if ($result->num_rows > 0) {
             // User exists
             $user = $result->fetch_assoc();
-            $selected_role = $_SESSION['login_role'] ?? 'student';
             
-            if ($user['role'] !== $selected_role) {
-                $_SESSION['error'] = "No user found for the selected role. Please select the correct role to continue.";
-                header("Location: login.php");
-                exit();
-            }
-
             // Log them in
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
+            $_SESSION['email'] = $email;
             $_SESSION['profile_photo'] = $user['profile_photo'];
 
             // Update last login timestamp
@@ -123,7 +117,7 @@ if (isset($_GET['code'])) {
 
         } else {
             // User does not exist in our database
-            $_SESSION['error'] = "User not registered.";
+            $_SESSION['error'] = "Access denied. Contact admin.";
             header("Location: ../auth/login.php");
             exit();
         }

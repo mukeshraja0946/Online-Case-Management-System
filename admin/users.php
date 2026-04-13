@@ -9,6 +9,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 }
 
 $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
+$admin_email = isset($_SESSION['email']) ? $_SESSION['email'] : '';
+$admin_initial = !empty($admin_name) ? strtoupper($admin_name[0]) : 'A';
 $msg = "";
 $error = "";
 
@@ -69,100 +71,67 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $staff_id = ($role == 'staff') ? $_POST['identifier'] : NULL;
 
         $department = $_POST['department'];
+        $year = isset($_POST['year']) ? $_POST['year'] : NULL;
+        $batch = isset($_POST['batch']) ? $_POST['batch'] : NULL;
         $semester = isset($_POST['semester']) ? $_POST['semester'] : NULL;
         $joined_date = $_POST['joined_date'];
 
         // Handle Profile Photo
         $profile_photo = NULL;
-        $photo_sql = "";
-        $photo_param = "";
-        
-        // Fetch current photo first to keep it if no new one uploaded
+        // ... (remaining photo logic same)
         $stmt_fetch = $conn->prepare("SELECT profile_photo FROM users WHERE id = ?");
         $stmt_fetch->bind_param("i", $user_id);
         $stmt_fetch->execute();
         $user_res = $stmt_fetch->get_result()->fetch_assoc();
-        
-        // Only set profile_photo if it wasn't already null from initialization
-        if ($user_res) {
-            $profile_photo = $user_res['profile_photo'];
-        }
+        if ($user_res) $profile_photo = $user_res['profile_photo'];
 
-        if (isset($_POST['remove_photo']) && $_POST['remove_photo'] == '1') {
-            $profile_photo = NULL;
-        }
-
+        if (isset($_POST['remove_photo']) && $_POST['remove_photo'] == '1') $profile_photo = NULL;
         if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] == 0) {
             $upload_dir = "../uploads/profile/";
-            if (!is_dir($upload_dir)) {
-                mkdir($upload_dir, 0777, true);
-            }
-
             $file_ext = strtolower(pathinfo($_FILES['profile_photo']['name'], PATHINFO_EXTENSION));
-            $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-            
-            if (in_array($file_ext, $allowed)) {
-                $new_file_name = "profile_" . $user_id . "_" . time() . "." . $file_ext;
-                $target_file = $upload_dir . $new_file_name;
-
-                if (move_uploaded_file($_FILES['profile_photo']['tmp_name'], $target_file)) {
-                    $profile_photo = $new_file_name;
-                } else {
-                    $error = "Failed to move uploaded file. Check directory permissions.";
-                }
-            } else {
-                $error = "Invalid file type. Allowed: " . implode(', ', $allowed);
-            }
-        } elseif (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] != 0 && $_FILES['profile_photo']['error'] != 4) {
-             $error = "Photo upload error code: " . $_FILES['profile_photo']['error'];
+            $new_file_name = "profile_" . $user_id . "_" . time() . "." . $file_ext;
+            if (move_uploaded_file($_FILES['profile_photo']['tmp_name'], $upload_dir . $new_file_name)) $profile_photo = $new_file_name;
         }
+
+        $stmt = $conn->prepare("UPDATE users SET name = ?, email = ?, role = ?, roll_no = ?, staff_id = ?, department = ?, year = ?, batch = ?, semester = ?, created_at = ?, profile_photo = ? WHERE id = ?");
+        $stmt->bind_param("sssssssssssi", $name, $email, $role, $roll_no, $staff_id, $department, $year, $batch, $semester, $joined_date, $profile_photo, $user_id);
         
-        $stmt = $conn->prepare("UPDATE users SET name = ?, email = ?, role = ?, roll_no = ?, staff_id = ?, department = ?, semester = ?, created_at = ?, profile_photo = ? WHERE id = ?");
-        $stmt->bind_param("sssssssssi", $name, $email, $role, $roll_no, $staff_id, $department, $semester, $joined_date, $profile_photo, $user_id);
-        
-        if ($stmt->execute()) {
-            $photo_status = ($profile_photo) ? " (Photo: $profile_photo)" : " (No Photo)";
-            $msg = "User details updated successfully!" . $photo_status;
-        } else {
-            $error = "Update Query Failed: " . $conn->error;
-        }
-    }
-
-    // 3. Reset Password
-    if (isset($_POST['action']) && $_POST['action'] == 'reset_password') {
-        $user_id = $_POST['user_id'];
-        $new_password = $_POST['new_password'];
-        $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-
-        $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-        $stmt->bind_param("si", $hashed_password, $user_id);
-
-        if ($stmt->execute()) {
-            file_put_contents('../debug_admin_reset.txt', date('Y-m-d H:i:s') . " - SUCCESS: Password reset for User ID: $user_id. Hash: " . substr($hashed_password, 0, 10) . "...\n", FILE_APPEND);
-            $msg = "Password reset successfully.";
-        } else {
-            file_put_contents('../debug_admin_reset.txt', date('Y-m-d H:i:s') . " - ERROR: Failed for User ID: $user_id. " . $stmt->error . "\n", FILE_APPEND);
-            $error = "Error resetting password: " . $conn->error;
-        }
+        if ($stmt->execute()) $msg = "User details updated successfully!";
+        else $error = "Update Failed: " . $conn->error;
     }
 }
+
+// --- SELF-HEALING SCHEMA CHECK ---
+$check_year = $conn->query("SHOW COLUMNS FROM users LIKE 'year'");
+if ($check_year->num_rows == 0) $conn->query("ALTER TABLE users ADD COLUMN year VARCHAR(50) AFTER department");
+
+$check_batch = $conn->query("SHOW COLUMNS FROM users LIKE 'batch'");
+if ($check_batch->num_rows == 0) $conn->query("ALTER TABLE users ADD COLUMN batch VARCHAR(50) AFTER year");
+
+// Fetch Filter Options for Dropdowns
+$dept_filter = isset($_GET['dept']) ? $_GET['dept'] : 'All';
+$year_filter = isset($_GET['year']) ? $_GET['year'] : 'All';
+$batch_filter = isset($_GET['batch']) ? $_GET['batch'] : 'All';
+
+$depts_list = $conn->query("SELECT DISTINCT department FROM users WHERE department IS NOT NULL AND department != '' ORDER BY department ASC");
+$years_list = $conn->query("SELECT DISTINCT year FROM users WHERE year IS NOT NULL AND year != '' ORDER BY year ASC");
+$batch_list = $conn->query("SELECT DISTINCT batch FROM users WHERE batch IS NOT NULL AND batch != '' ORDER BY batch ASC");
 
 // Fetch Users
 $role_filter = isset($_GET['role']) ? $_GET['role'] : 'All';
 $search_query = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-$sql = "SELECT * FROM users WHERE role != 'admin'"; // Exclude admins from this list for safety
+$sql = "SELECT * FROM users WHERE role != 'admin'"; 
 
-if ($role_filter != 'All') {
-    $sql .= " AND role = '$role_filter'";
-}
-
-if (!empty($search_query)) {
-    $sql .= " AND (name LIKE '%$search_query%' OR email LIKE '%$search_query%' OR roll_no LIKE '%$search_query%' OR staff_id LIKE '%$search_query%')";
-}
+if ($role_filter != 'All') $sql .= " AND role = '$role_filter'";
+if ($dept_filter != 'All') $sql .= " AND department = '" . $conn->real_escape_string($dept_filter) . "'";
+if ($year_filter != 'All') $sql .= " AND year = '" . $conn->real_escape_string($year_filter) . "'";
+if ($batch_filter != 'All') $sql .= " AND batch = '" . $conn->real_escape_string($batch_filter) . "'";
+if (!empty($search_query)) $sql .= " AND (name LIKE '%$search_query%' OR email LIKE '%$search_query%' OR roll_no LIKE '%$search_query%' OR staff_id LIKE '%$search_query%')";
 
 $sql .= " ORDER BY id DESC";
 $result = $conn->query($sql);
+if (!$result) $result = (object) ['num_rows' => 0]; // Safety fallback to avoid crash if query fails
 ?>
 
 <!DOCTYPE html>
@@ -183,23 +152,27 @@ $result = $conn->query($sql);
     <!-- CSS -->
     <link href="../assets/css/style.css" rel="stylesheet">
 </head>
-<body>
+<body class="admin-portal">
     <div class="wrapper">
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar admin-sidebar">
             <div class="sidebar-header">
-                <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
+                <div class="logo">
+                    <img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 55px;">
+                </div>
             </div>
             
             <div class="sidebar-menu">
                 <div class="menu-label">Admin Menu</div>
-                <a href="dashboard.php"><i class="fas fa-chart-line"></i> Dashboard</a>
-                <a href="bulk_create_users.php"><i class="fas fa-user-plus"></i> Create Users</a>
-                <a href="users.php" class="active"><i class="fas fa-users"></i> Manage Users</a>
-                <a href="cases.php"><i class="fas fa-folder-open"></i> All Cases</a>
+                <?php $current_page = basename($_SERVER['PHP_SELF']); ?>
+                <a href="dashboard.php" class="menu-item <?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>"><i class="fas fa-chart-line"></i> Dashboard</a>
+                <a href="bulk_create_users.php" class="menu-item <?php echo ($current_page == 'bulk_create_users.php') ? 'active' : ''; ?>"><i class="fas fa-user-plus"></i> Create Users</a>
+                <a href="users.php" class="menu-item <?php echo ($current_page == 'users.php') ? 'active' : ''; ?>"><i class="fas fa-users"></i> Manage Users</a>
+                <a href="cases.php" class="menu-item <?php echo ($current_page == 'cases.php') ? 'active' : ''; ?>"><i class="fas fa-folder-open"></i> All Cases</a>
+                <a href="manage_case_types.php" class="menu-item <?php echo ($current_page == 'manage_case_types.php') ? 'active' : ''; ?>"><i class="fas fa-tags"></i> Case Types</a>
                 
                 <div class="menu-label menu-bottom-section mt-3">Account</div>
-                <a href="settings.php"><i class="fas fa-cog"></i> Settings</a>
+                <a href="settings.php" class="menu-item <?php echo ($current_page == 'settings.php') ? 'active' : ''; ?>"><i class="fas fa-cog"></i> Settings</a>
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
         </div>
@@ -214,17 +187,17 @@ $result = $conn->query($sql);
                 </div>
                 
                 <div class="user-nav ms-auto">
-                    <div class="user-profile">
-                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center">
-                            A
+                    <div class="user-profile d-flex align-items-center gap-3">
+                        <div class="text-end" style="line-height: 1.2;">
+                            <div style="font-size: 0.9rem; font-weight: 750; color: #1e293b; font-family: 'Outfit';">
+                                <?php echo ($_SESSION['role'] === 'admin' ? 'Admin | ' : '') . htmlspecialchars($admin_name); ?>
+                            </div>
+                            <div style="font-size: 0.75rem; color: #64748b; font-weight: 500;">
+                                <?php echo htmlspecialchars($admin_email); ?>
+                            </div>
                         </div>
-                        <div class="d-flex flex-column text-center" style="line-height: 1.2;">
-                            <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
-                                <?php echo htmlspecialchars($admin_name); ?>
-                            </span>
-                            <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
-                                Administrator
-                            </span>
+                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 40px; height: 40px; border-radius: 50%;">
+                            <?php echo $admin_initial; ?>
                         </div>
                     </div>
                 </div>
@@ -248,22 +221,52 @@ $result = $conn->query($sql);
                 <div class="card-body">
                     <div class="row g-3 align-items-center">
                         <div class="col-md-9">
-                            <form method="GET" action="" class="row g-3 align-items-center">
-                                <div class="col-md-5">
+                            <form method="GET" action="" class="row g-2 align-items-center">
+                                <div class="col-md-3">
                                     <div class="input-group">
                                         <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
-                                        <input type="text" name="search" class="form-control bg-light border-start-0" placeholder="Search name, email, ID..." value="<?php echo htmlspecialchars($search_query); ?>">
+                                        <input type="text" name="search" class="form-control bg-light border-start-0" placeholder="Search..." value="<?php echo htmlspecialchars($search_query); ?>">
                                     </div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-2">
                                     <select name="role" class="form-select bg-light" onchange="this.form.submit()">
-                                        <option value="All" <?php echo ($role_filter == 'All') ? 'selected' : ''; ?> hidden>Select Role</option>
+                                        <option value="All" <?php echo ($role_filter == 'All') ? 'selected' : ''; ?>>All Roles</option>
                                         <option value="student" <?php echo ($role_filter == 'student') ? 'selected' : ''; ?>>Student</option>
                                         <option value="staff" <?php echo ($role_filter == 'staff') ? 'selected' : ''; ?>>Staff</option>
                                     </select>
                                 </div>
-                                <div class="col-md-3">
-                                     <a href="users.php" class="btn btn-secondary w-100">Reset</a>
+                                <div class="col-md-2">
+                                    <select name="dept" class="form-select bg-light" onchange="this.form.submit()">
+                                        <option value="All">All Depts</option>
+                                        <?php while($d = $depts_list->fetch_assoc()): ?>
+                                            <option value="<?php echo $d['department']; ?>" <?php echo ($dept_filter == $d['department']) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($d['department']); ?>
+                                            </option>
+                                        <?php endwhile; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <select name="year" class="form-select bg-light" onchange="this.form.submit()">
+                                        <option value="All">All Years</option>
+                                        <?php while($y = $years_list->fetch_assoc()): ?>
+                                            <option value="<?php echo $y['year']; ?>" <?php echo ($year_filter == $y['year']) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($y['year']); ?> yr
+                                            </option>
+                                        <?php endwhile; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <select name="batch" class="form-select bg-light" onchange="this.form.submit()">
+                                        <option value="All">All Batches</option>
+                                        <?php while($b = $batch_list->fetch_assoc()): ?>
+                                            <option value="<?php echo $b['batch']; ?>" <?php echo ($batch_filter == $b['batch']) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($b['batch']); ?>
+                                            </option>
+                                        <?php endwhile; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-1">
+                                     <a href="users.php" class="btn btn-secondary w-100" title="Reset Filters"><i class="fas fa-undo"></i></a>
                                 </div>
                             </form>
                         </div>
@@ -290,18 +293,10 @@ $result = $conn->query($sql);
                                 <th>Role</th>
                                 <th>Email</th>
                                 <th>Department</th>
-                                <th>Joined Date</th>
-                                <th>
-                                    <?php 
-                                    if ($role_filter == 'student') {
-                                        echo 'Roll Number';
-                                    } elseif ($role_filter == 'staff') {
-                                        echo 'Staff ID';
-                                    } else {
-                                        echo 'ID (Roll/Staff)';
-                                    }
-                                    ?>
-                                </th>
+                                <th>Year</th>
+                                <th>Batch</th>
+                                <th>Joined</th>
+                                <th>...</th>
                                 <th class="pe-4">Actions</th>
                             </tr>
                         </thead>
@@ -338,10 +333,14 @@ $result = $conn->query($sql);
                                             <?php endif; ?>
                                         </td>
                                         <td><small class="text-muted"><?php echo htmlspecialchars($row['email']); ?></small></td>
-                                        <td><small class="text-muted"><?php echo htmlspecialchars($row['department'] ?? 'N/A'); ?></small></td>
-                                        <td><small class="text-muted"><?php echo date('M d, Y', strtotime($row['created_at'])); ?></small></td>
+                                        <td><small class="text-muted fw-bold"><?php echo htmlspecialchars($row['department'] ?? 'N/A'); ?></small></td>
+                                        <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($row['year'] ?? '-'); ?> yr</span></td>
+                                        <td><small class="text-muted"><?php echo htmlspecialchars($row['batch'] ?? '-'); ?></small></td>
+                                        <td><small class="text-muted"><?php echo date('d M, Y', strtotime($row['created_at'])); ?></small></td>
                                         <td>
-                                            <?php echo htmlspecialchars($row['role'] == 'student' ? $row['roll_no'] : $row['staff_id']); ?>
+                                            <span class="badge bg-secondary">
+                                                <?php echo htmlspecialchars($row['role'] == 'student' ? $row['roll_no'] : $row['staff_id']); ?>
+                                            </span>
                                         </td>
                                         <td class="pe-4">
                                             <div class="d-flex justify-content-center gap-3">
@@ -352,6 +351,8 @@ $result = $conn->query($sql);
                                                    data-name="<?php echo htmlspecialchars($row['name']); ?>"
                                                    data-email="<?php echo htmlspecialchars($row['email']); ?>"
                                                    data-department="<?php echo htmlspecialchars($row['department'] ?? ''); ?>"
+                                                   data-year="<?php echo htmlspecialchars($row['year'] ?? ''); ?>"
+                                                   data-batch="<?php echo htmlspecialchars($row['batch'] ?? ''); ?>"
                                                    data-semester="<?php echo htmlspecialchars($row['semester'] ?? ''); ?>"
                                                    data-role="<?php echo $row['role']; ?>"
                                                    data-photo="<?php echo htmlspecialchars($row['profile_photo'] ?? ''); ?>"
@@ -435,6 +436,16 @@ $result = $conn->query($sql);
                         <div class="mb-3">
                             <label class="form-label">Department</label>
                             <input type="text" name="department" id="edit_department" class="form-control">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Year</label>
+                                <input type="text" name="year" id="edit_year" class="form-control">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Batch</label>
+                                <input type="text" name="batch" id="edit_batch" class="form-control">
+                            </div>
                         </div>
                         <div class="mb-3" id="semester_field_group">
                             <label class="form-label">Semester</label>
@@ -547,13 +558,17 @@ $result = $conn->query($sql);
             const name = button.getAttribute('data-name');
             const email = button.getAttribute('data-email');
             const department = button.getAttribute('data-department');
+            const year = button.getAttribute('data-year');
+            const batch = button.getAttribute('data-batch');
             const role = button.getAttribute('data-role');
             const identifier = button.getAttribute('data-identifier');
             
             document.getElementById('edit_user_id').value = id;
             document.getElementById('edit_name').value = name;
             document.getElementById('edit_email').value = email;
-            document.getElementById('edit_department').value = button.getAttribute('data-department');
+            document.getElementById('edit_department').value = department;
+            document.getElementById('edit_year').value = year;
+            document.getElementById('edit_batch').value = batch;
             document.getElementById('edit_semester').value = button.getAttribute('data-semester');
             document.getElementById('edit_joined_date').value = button.getAttribute('data-joined');
             document.getElementById('edit_role_type').value = role;

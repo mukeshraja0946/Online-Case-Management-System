@@ -1,11 +1,11 @@
 <?php
 session_start();
-require_once '../config/db.php';
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
-    header("Location: ../auth/login.php");
+if ($_SESSION['role'] != 'staff') {
+    header("Location: dashboard.php");
     exit();
 }
+require_once '../config/db.php';
 
 $student_id = $_SESSION['user_id'];
 // Fetch fresh student data from DB
@@ -137,15 +137,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             <div class="sidebar-menu">
                 <div class="menu-label">Menu</div>
-                <a href="dashboard.php"><i class="fas fa-th-large"></i> Dashboard</a>
-                <a href="add_case.php" class="active"><i class="fas fa-plus-circle"></i> Add Cases</a>
-                <a href="my_cases.php"><i class="fas fa-file-alt"></i> My Cases</a>
-                <a href="approved_cases.php"><i class="fas fa-check-circle"></i> Approved Cases</a>
-                <a href="rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected Cases</a>
+                <?php $current_page = basename($_SERVER['PHP_SELF']); ?>
+                <a href="dashboard.php" class="menu-item <?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>"><i class="fas fa-th-large"></i> Dashboard</a>
+                <a href="available_cases.php" class="menu-item <?php echo ($current_page == 'available_cases.php') ? 'active' : ''; ?>"><i class="fas fa-list"></i> Available Cases</a>
+                <a href="my_cases.php" class="menu-item <?php echo ($current_page == 'my_cases.php') ? 'active' : ''; ?>"><i class="fas fa-file-alt"></i> My Submissions</a>
+                <a href="approved_cases.php" class="menu-item <?php echo ($current_page == 'approved_cases.php') ? 'active' : ''; ?>"><i class="fas fa-check-circle"></i> Approved Submissions</a>
+                <a href="rejected_cases.php" class="menu-item <?php echo ($current_page == 'rejected_cases.php') ? 'active' : ''; ?>"><i class="fas fa-times-circle"></i> Rejected Submissions</a>
                 
                 <div class="menu-label menu-bottom-section mt-3">Account</div>
-                <a href="case_history.php"><i class="fas fa-history"></i> History</a>
-                <a href="../auth/profile.php"><i class="fas fa-cog"></i> Settings</a>
+                <a href="case_history.php" class="menu-item <?php echo ($current_page == 'case_history.php') ? 'active' : ''; ?>"><i class="fas fa-history"></i> History</a>
+                <a href="../auth/profile.php" class="menu-item <?php echo ($current_page == 'profile.php') ? 'active' : ''; ?>"><i class="fas fa-cog"></i> Settings</a>
                 
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>

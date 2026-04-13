@@ -9,6 +9,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 }
 
 $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
+$admin_email = isset($_SESSION['email']) ? $_SESSION['email'] : '';
+$admin_initial = !empty($admin_name) ? strtoupper($admin_name[0]) : 'A';
 ?>
 
 <!DOCTYPE html>
@@ -26,85 +28,90 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
     <!-- CSS -->
     <link href="../assets/css/style.css" rel="stylesheet">
     <style>
-        .custom-file-upload {
-            border: 2px dashed #e2e8f0;
+        .method-toggle {
+            display: inline-flex;
+            background: #f1f5f9;
+            padding: 5px;
+            border-radius: 16px;
+            margin-bottom: 25px;
+            border: 1px solid #e2e8f0;
+        }
+        .method-btn {
+            padding: 10px 24px;
             border-radius: 12px;
-            padding: 40px;
+            border: none;
+            font-weight: 600;
+            background: transparent;
+            color: #64748b;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .method-btn:hover {
+            color: #1e293b;
+        }
+        .method-btn.active {
+            background: #2563eb;
+            color: white;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.25);
+        }
+        .custom-file-upload {
+            border: 2px dashed #cbd5e1;
+            border-radius: 16px;
+            padding: 50px 30px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
             background: #f8fafc;
         }
         .custom-file-upload:hover {
-            border-color: var(--primary-color);
-            background: #f1f5f9;
-        }
-        .method-toggle {
-            display: flex;
-            gap: 10px;
-            background: #f1f5f9;
-            padding: 5px;
-            border-radius: 10px;
-            margin-bottom: 25px;
-        }
-        .method-btn {
-            flex: 1;
-            padding: 10px;
-            border-radius: 8px;
-            border: none;
-            font-weight: 600;
-            background: transparent;
-            color: #64748b;
-            transition: all 0.2s;
-        }
-        .method-btn.active {
-            background: white;
-            color: var(--primary-color);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .manual-table input, .manual-table select {
-            border: none;
-            background: transparent;
-            padding: 5px;
-            width: 100%;
-        }
-        .manual-table tr:hover {
-            background: #f8fafc;
-        }
-        .remove-row-btn {
-            color: #ef4444;
-            cursor: pointer;
-            opacity: 0.6;
-            transition: 0.2s;
-        }
-        .remove-row-btn:hover {
-            opacity: 1;
+            border-color: #2563eb;
+            background: #eff6ff;
         }
         #resultSummary {
             display: none;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .result-stat-box {
+            padding: 20px;
+            text-align: center;
+            flex: 1;
+        }
+        .result-stat-box:first-child {
+            border-right: 1px solid #f1f5f9;
         }
     </style>
 </head>
-<body>
+<body class="admin-portal">
     <div class="wrapper">
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar admin-sidebar">
             <div class="sidebar-header">
-                <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
+                <div class="logo">
+                    <img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 55px;">
+                </div>
             </div>
             
             <div class="sidebar-menu">
                 <div class="menu-label">Admin Menu</div>
-                <a href="dashboard.php"><i class="fas fa-chart-line"></i> Dashboard</a>
-                <a href="bulk_create_users.php" class="active"><i class="fas fa-user-plus"></i> Create Users</a>
-                <a href="users.php"><i class="fas fa-users"></i> Manage Users</a>
-                <a href="cases.php"><i class="fas fa-folder-open"></i> All Cases</a>
+                <?php $current_page = basename($_SERVER['PHP_SELF']); ?>
+                <a href="dashboard.php" class="menu-item <?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>"><i class="fas fa-chart-line"></i> Dashboard</a>
+                <a href="bulk_create_users.php" class="menu-item <?php echo ($current_page == 'bulk_create_users.php') ? 'active' : ''; ?>"><i class="fas fa-user-plus"></i> Create Users</a>
+                <a href="users.php" class="menu-item <?php echo ($current_page == 'users.php') ? 'active' : ''; ?>"><i class="fas fa-users"></i> Manage Users</a>
+                <a href="cases.php" class="menu-item <?php echo ($current_page == 'cases.php') ? 'active' : ''; ?>"><i class="fas fa-folder-open"></i> All Cases</a>
+                <a href="manage_case_types.php" class="menu-item <?php echo ($current_page == 'manage_case_types.php') ? 'active' : ''; ?>"><i class="fas fa-tags"></i> Case Types</a>
                 
                 <div class="menu-label menu-bottom-section mt-3">Account</div>
-                <a href="settings.php"><i class="fas fa-cog"></i> Settings</a>
+                <a href="settings.php" class="menu-item <?php echo ($current_page == 'settings.php') ? 'active' : ''; ?>"><i class="fas fa-cog"></i> Settings</a>
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
         </div>
@@ -118,37 +125,44 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                     <p>Create Student and Staff Account</p>
                 </div>
                 
-                <div class="user-nav ms-auto">
-                    <div class="user-profile">
-                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center">
-                            A
+                <div class="user-nav ms-auto d-flex align-items-center gap-4">
+                    <a href="users.php" class="btn d-flex align-items-center gap-2 px-3 py-2 shadow-sm" style="background: #F8FAFC; color: #475569; border: 1px solid #E2E8F0; border-radius: 12px; transition: all 0.3s ease; font-weight: 600; font-size: 0.85rem;">
+                        <i class="fas fa-users"></i>
+                        <span>Manage Users</span>
+                    </a>
+                    <div class="user-profile d-flex align-items-center gap-3">
+                        <div class="text-end" style="line-height: 1.2;">
+                            <div style="font-size: 0.9rem; font-weight: 750; color: #1e293b; font-family: 'Outfit';">
+                                <?php echo ($_SESSION['role'] === 'admin' ? 'Admin | ' : '') . htmlspecialchars($admin_name); ?>
+                            </div>
+                            <div style="font-size: 0.75rem; color: #64748b; font-weight: 500;">
+                                <?php echo htmlspecialchars($admin_email); ?>
+                            </div>
                         </div>
-                        <div class="text-center" style="line-height: 1.2;">
-                            <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
-                                <?php echo htmlspecialchars($admin_name); ?>
-                            </span>
+                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 40px; height: 40px; border-radius: 50%;">
+                            <?php echo $admin_initial; ?>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Result Summary (Hidden by default) -->
-            <div id="resultSummary" class="card border-0 shadow-sm mb-4" style="border-radius: 15px;">
-                <div class="card-body">
-                    <h5 class="fw-bold mb-3">Processing Results</h5>
-                    <div class="alert alert-info border-0 d-flex justify-content-around text-center py-3" style="border-radius: 12px; background: #eef2ff;">
-                        <div>
-                            <span class="d-block h3 fw-bold text-primary mb-0" id="successCount">0</span>
-                            <small class="text-muted text-uppercase fw-700" style="font-size: 0.7rem;">Created</small>
+            <div id="resultSummary" class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
+                <div class="card-body p-0">
+                    <div class="d-flex align-items-stretch">
+                        <div class="result-stat-box">
+                            <span class="d-block h4 fw-bold text-success mb-1" id="successCount">0</span>
+                            <span class="text-muted text-uppercase fw-bold" style="font-size: 0.65rem; letter-spacing: 0.05em;">Successful</span>
                         </div>
-                        <div class="border-start border-2 opacity-50"></div>
-                        <div>
-                            <span class="d-block h3 fw-bold text-danger mb-0" id="failedCount">0</span>
-                            <small class="text-muted text-uppercase fw-700" style="font-size: 0.7rem;">Failed</small>
+                        <div class="result-stat-box" style="background: #fffcfc;">
+                            <span class="d-block h4 fw-bold text-danger mb-1" id="failedCount">0</span>
+                            <span class="text-muted text-uppercase fw-bold" style="font-size: 0.65rem; letter-spacing: 0.05em;">Failed</span>
+                        </div>
+                        <div class="p-3 d-flex align-items-center border-start">
+                            <button onclick="location.reload()" class="btn btn-primary btn-sm rounded-pill px-4 fw-bold">New Upload</button>
                         </div>
                     </div>
-                    <div id="errorList" class="mt-3 small" style="max-height: 200px; overflow-y: auto;"></div>
-                    <button onclick="location.reload()" class="btn btn-outline-primary btn-sm mt-3 w-100 rounded-pill">Create More</button>
+                    <div id="errorList" class="p-4 border-top small" style="max-height: 200px; overflow-y: auto; display: none;"></div>
                 </div>
             </div>
 
@@ -164,21 +178,23 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                     <div id="csvMethod" class="card border-0 shadow-sm" style="border-radius: 15px;">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-center mb-4">
-                                <h5 class="fw-bold m-0">Upload CSV File</h5>
-                                <a href="../assets/samples/sample_users.csv" download class="btn btn-sm btn-light rounded-pill px-3">
+                                <h5 class="fw-bold m-0" style="font-size: 1rem; color: #1e293b;">Upload CSV File</h5>
+                                <a href="../assets/samples/sample_users.csv" download class="btn btn-sm text-primary fw-bold" style="background: #f0f7ff; border-radius: 8px;">
                                     <i class="fas fa-download me-2"></i>Sample Template
                                 </a>
                             </div>
 
                             <form id="csvForm">
                                 <!-- Upload Area -->
-                                <div class="upload-area p-5 border-2 border-dashed rounded-4 text-center mb-4" id="dropZone" style="border-color: #dee2e6; cursor: pointer;">
+                                <div class="custom-file-upload mb-4" id="dropZone">
                                     <input type="file" id="csvFileInput" name="csv_file" class="d-none" accept=".csv, .xlsx, .xls, .pdf, .docx">
                                     <div class="mb-3">
-                                        <i class="fas fa-cloud-upload-alt text-primary" style="font-size: 3rem;"></i>
+                                        <div class="icon-circle bg-white shadow-sm d-inline-flex p-3 rounded-circle" style="color: #2563eb;">
+                                            <i class="fas fa-cloud-upload-alt" style="font-size: 1.8rem;"></i>
+                                        </div>
                                     </div>
-                                    <h5 class="fw-bold mb-2">Click to upload or drag and drop</h5>
-                                    <p class="text-muted small mb-0">Max file size 20MB. CSV, Excel, Word, and PDF files are supported.</p>
+                                    <h6 class="fw-bold mb-2">Click to upload or drag and drop</h6>
+                                    <p class="text-muted small mb-0">CSV, Excel, Word, and PDF files are supported.</p>
                                 </div>
                                  <span id="fileNameDisplay" class="badge bg-soft-blue text-primary mt-2 d-none align-items-center">
                                     <span id="fileNameText"></span>
@@ -195,6 +211,8 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                                                 <th>Email</th>
                                                 <th>ID</th>
                                                 <th>Dept</th>
+                                                <th>Year</th>
+                                                <th>Batch</th>
                                                 <th>Role</th>
                                                 <th>Password</th>
                                                 <th class="text-center">Actions</th>
@@ -212,35 +230,42 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                     </div>
 
                     <!-- Method B: Manual Form -->
-                    <div id="manualMethod" class="card border-0 shadow-sm d-none" style="border-radius: 15px;">
+                    <div id="manualMethod" class="card border-0 shadow-sm d-none" style="border-radius: 16px;">
                         <div class="card-body">
-                            <h5 class="fw-bold mb-4">Manual Entry</h5>
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <h5 class="fw-bold m-0" style="font-size: 1rem; color: #1e293b;">Manual Entry List</h5>
+                                <button type="button" id="openAddUserModalBtn" class="btn btn-sm text-primary fw-bold" style="background: #f0f7ff; border-radius: 8px;" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                                    <i class="fas fa-plus-circle me-2"></i>Add User
+                                </button>
+                            </div>
                             <form id="manualForm">
-                                <div class="table-responsive">
-                                    <table class="table manual-table border rounded" style="font-size: 0.85rem;">
+                                <div class="table-responsive d-none" id="manualPreviewWrapper">
+                                    <table class="table table-hover border rounded" style="font-size: 0.85rem;">
                                         <thead class="bg-light">
                                             <tr>
-                                                <th style="width: 25%;">Name</th>
-                                                <th style="width: 25%;">Email</th>
-                                                <th style="width: 15%;">ID (Reg/Staff)</th>
-                                                <th style="width: 15%;">Dept</th>
-                                                <th style="width: 15%;">Role</th>
-                                                <th style="width: 5%;"></th>
+                                                <th>#</th>
+                                                <th>Name</th>
+                                                <th>Email</th>
+                                                <th>ID</th>
+                                                <th>Dept</th>
+                                                <th>Role</th>
+                                                <th>Password</th>
+                                                <th class="text-center">Photo</th>
+                                                <th class="text-center">Action</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="manualTableBody">
-                                            <!-- Rows added via JS -->
-                                        </tbody>
+                                        <tbody id="manualTableBody"></tbody>
                                     </table>
                                 </div>
-                                <div class="d-flex justify-content-between mt-3">
-                                    <button type="button" id="addRowBtn" class="btn btn-light rounded-pill px-3 btn-sm">
-                                        <i class="fas fa-plus me-2"></i>Add Row
-                                    </button>
-                                    <span class="text-muted small">Max 100 rows</span>
+                                <div id="manualEmptyState" class="text-center py-5 text-muted border rounded mb-3" style="border-color: #cbd5e1 !important; border-style: dashed !important; border-width: 2px !important;">
+                                    <i class="fas fa-users-viewfinder fs-1 mb-2 text-primary opacity-50"></i>
+                                    <p class="m-0 fw-medium">No users added yet.</p>
+                                    <p class="small opacity-75">Click 'Add User' to add details row by row.</p>
                                 </div>
-                                
-                                <button type="submit" class="btn btn-primary mt-4 w-100 rounded-pill py-2 fw-bold">
+                                <div class="d-flex justify-content-between mt-3">
+                                    <span class="text-muted small">Total: <span id="manualUserCount" class="fw-bold text-dark">0</span>/100 users</span>
+                                </div>
+                                <button type="submit" id="submitManualBtn" class="btn btn-primary mt-4 w-100 rounded-pill py-2 fw-bold" disabled>
                                     Create All Users
                                 </button>
                             </form>
@@ -249,15 +274,33 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                 </div>
 
                 <div class="col-lg-4">
-                    <div class="card border-0 shadow-sm mb-4" style="border-radius: 15px;">
+                    <div class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
                         <div class="card-body">
-                            <h6 class="fw-bold text-uppercase small text-muted mb-3">Guidelines</h6>
-                            <ul class="ps-3 small text-muted" style="line-height: 1.6;">
-                                <li class="mb-2"><strong>Max Limit:</strong> 100 accounts per upload. (Max 20MB file size)</li>
-                                <li><strong>File Formats:</strong> Use CSV, Excel (.xlsx), Word (.docx), or PDF for account data.</li>
-                                <li class="mb-2"><strong>Uniqueness:</strong> Emails and Register Numbers must be unique.</li>
-                                <li class="mb-2"><strong>Roles:</strong> Ensure role names match exactly: <code>student</code> or <code>staff</code>.</li>
-                            </ul>
+                            <h6 class="fw-bold text-uppercase small text-muted mb-4" style="letter-spacing: 0.05em;">Quick Guidelines</h6>
+                            <div class="guideline-item d-flex gap-3 mb-3">
+                                <div class="icon-sm text-primary p-2 rounded-3 bg-soft-blue" style="width: 35px; height: 35px; min-width: 35px; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-tachometer-alt"></i>
+                                </div>
+                                <div class="small text-muted"><strong>Batch Limit:</strong> Up to 100 accounts per upload for stability.</div>
+                            </div>
+                            <div class="guideline-item d-flex gap-3 mb-3">
+                                <div class="icon-sm text-primary p-2 rounded-3 bg-soft-blue" style="width: 35px; height: 35px; min-width: 35px; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-file-invoice"></i>
+                                </div>
+                                <div class="small text-muted"><strong>Formats:</strong> CSV, Excel, Word, or text-based PDFs.</div>
+                            </div>
+                            <div class="guideline-item d-flex gap-3 mb-3">
+                                <div class="icon-sm text-primary p-2 rounded-3 bg-soft-blue" style="width: 35px; height: 35px; min-width: 35px; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-fingerprint"></i>
+                                </div>
+                                <div class="small text-muted"><strong>Uniqueness:</strong> Emails and IDs must not already exist.</div>
+                            </div>
+                            <div class="guideline-item d-flex gap-3">
+                                <div class="icon-sm text-primary p-2 rounded-3 bg-soft-blue" style="width: 35px; height: 35px; min-width: 35px; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-user-tag"></i>
+                                </div>
+                                <div class="small text-muted"><strong>Roles:</strong> Use the exact keywords 'student' or 'staff'.</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -312,6 +355,76 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
         </div>
     </div>
 
+    <!-- Add User Modal for Manual Entry -->
+    <div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow" style="border-radius: 15px;">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold m-0">Add New User Detail</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addUserForm">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Full Name</label>
+                            <input type="text" id="addName" class="form-control rounded-pill" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Email Address</label>
+                            <input type="email" id="addEmail" class="form-control rounded-pill" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Roll / Staff ID</label>
+                            <input type="text" id="addID" class="form-control rounded-pill" required>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Department</label>
+                                <input type="text" id="addDept" class="form-control rounded-pill">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Role</label>
+                                <select id="addRole" class="form-select rounded-pill">
+                                    <option value="student">Student</option>
+                                    <option value="staff">Staff</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row mb-3 student-only-fields">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Year</label>
+                                <select id="addYear" class="form-select rounded-pill">
+                                    <option value="">Select Year</option>
+                                    <option value="1">1st Year</option>
+                                    <option value="2">2nd Year</option>
+                                    <option value="3">3rd Year</option>
+                                    <option value="4">4th Year</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Batch</label>
+                                <input type="text" id="addBatch" class="form-control rounded-pill" placeholder="e.g. 2021-2025">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Password</label>
+                            <input type="text" id="addPassword" class="form-control rounded-pill" value="welcome@123" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label small fw-bold">Profile Picture (Optional)</label>
+                            <input type="file" id="addPhoto" name="photo_input" class="form-control rounded-pill" accept="image/*">
+                            <div id="addPhotoPreviewContainer" class="mt-2 text-center d-none">
+                                <img id="addPhotoPreview" src="" style="width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary);">
+                                <input type="hidden" id="addPhotoBase64">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 rounded-pill fw-bold">Save User to List</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- JS -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- PDF.js for PDF Parsing -->
@@ -358,6 +471,21 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                     }
                 });
             });
+
+            // Role change toggle: Show/Hide Student Only Fields
+            const addRoleSelect = document.getElementById('addRole');
+            const studentFields = document.querySelector('.student-only-fields');
+            
+            function toggleStudentFields() {
+                if (addRoleSelect.value === 'student') {
+                    studentFields.style.display = 'flex';
+                } else {
+                    studentFields.style.display = 'none';
+                }
+            }
+            
+            addRoleSelect.addEventListener('change', toggleStudentFields);
+            toggleStudentFields(); // Run on init
 
             // Drag and Drop Handlers
             dropZone.addEventListener('click', () => csvFileInput.click());
@@ -422,7 +550,9 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                                     register_no: cols[2] || '',
                                     department: cols[3] || '',
                                     role: (cols[4] || 'student').toLowerCase().trim(),
-                                    password: cols[5] || 'welcome@123'
+                                    password: cols[5] || 'welcome@123',
+                                    year: cols[6] || '',
+                                    batch: cols[7] || ''
                                 };
                             });
                             displayPreview(parsedExcelData);
@@ -445,10 +575,12 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                             parsedExcelData = rows.slice(1).map((cols, idx) => ({
                                 name: cols[0] || '',
                                 email: cols[1] || '',
-                                register_no: cols[2] || '',
+                                register_no: (cols[2] || '').toString(),
                                 department: cols[3] || '',
-                                role: (cols[4] || '').toString().toLowerCase().trim(),
-                                password: (cols[5] || 'welcome@123').toString()
+                                year: (cols[4] || '').toString(),
+                                batch: (cols[5] || '').toString(),
+                                role: (cols[6] || '').toString().toLowerCase().trim(),
+                                password: (cols[7] || 'welcome@123').toString()
                             }));
 
                             displayPreview(parsedExcelData);
@@ -510,53 +642,65 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                                     const emailMatch = line.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
                                     if (emailMatch) {
                                         const email = emailMatch[0];
-                                        const parts = line.split(email);
-                                        const beforeEmail = parts[0].trim();
-                                        const afterEmail = (parts[1] || "").trim();
-
-                                        // 1. Name: Clean the text before email
-                                        let name = beforeEmail.replace(/^[\d\s\W]+/, '').trim();
-                                        // Header cleaning: remove common table headers
-                                        const headers = ['name', 'email', 'register', 'no', 'dept', 'role', 'password', 'accounts', 'users'];
-                                        headers.forEach(h => {
-                                            const reg = new RegExp('\\b' + h + '\\b', 'gi');
-                                            name = name.replace(reg, '');
-                                        });
-                                        name = name.trim();
-
-                                        // 2. ID: Look for 5-15 char alphanum in text after email
-                                        const idMatch = afterEmail.match(/\b([A-Z0-9-]{5,15})\b/);
-                                        const register_no = idMatch ? idMatch[0] : "";
-
-                                        // 3. Dept: First token between Email and ID or after ID
-                                        const deptMatch = afterEmail.match(/\b(IT|CSE|ECE|EEE|MECH|CIVIL)\b/i);
-                                        const department = deptMatch ? deptMatch[0].toUpperCase() : "";
-
-                                        // 4. Role: student or staff
-                                        const roleMatch = line.toLowerCase().match(/\b(student|staff)\b/);
-                                        const role = roleMatch ? roleMatch[0] : "student";
-
-                                        // 5. Password: Token after the role or at the end
-                                        let password = 'welcome@123';
-                                        if (roleMatch) {
-                                            const partsAfterRole = line.toLowerCase().split(role);
-                                            const afterRole = partsAfterRole[partsAfterRole.length - 1].trim();
-                                            if (afterRole) {
-                                                const tokens = afterRole.split(/\s+/);
-                                                if (tokens.length > 0 && tokens[0].length >= 4) {
-                                                    password = tokens[0];
+                                        const tokens = line.trim().split(/\s+/);
+                                        const eIdx = tokens.findIndex(t => t === email);
+                                        
+                                        if (eIdx !== -1) {
+                                            // The PDF format seems to be: S.No User Role Email Department Year [yr] Batch JoinedDate UserID
+                                            
+                                            // 1. Role: Token immediately before email
+                                            const role = (tokens[eIdx - 1] || "student").toLowerCase();
+                                            
+                                            // 2. Name: Tokens between S.No and Role
+                                            // Usually tokens[1...eIdx-2]
+                                            let name = "";
+                                            if (eIdx > 2) {
+                                                name = tokens.slice(1, eIdx - 1).join(" ");
+                                            } else if (eIdx === 2) {
+                                                name = tokens[1];
+                                            }
+                                            
+                                            // 3. User ID: Usually the LAST token in our specific PDF format
+                                            const register_no = tokens[tokens.length - 1] || "";
+                                            
+                                            // 4. Dept: Token immediately after email
+                                            const department = (tokens[eIdx + 1] || "").toUpperCase();
+                                            
+                                            // 5. Year: Look for a single digit (1-4) or '-'
+                                            let year = "";
+                                            const potentialYear = tokens[eIdx + 2];
+                                            if (potentialYear && /^[1-4]$/.test(potentialYear)) {
+                                                year = potentialYear;
+                                            } else if (potentialYear === '-') {
+                                                year = "";
+                                            }
+                                            
+                                            // 6. Batch: Look for pattern \d{4}-\d{4}
+                                            let batch = "";
+                                            // It's usually a few tokens after the year
+                                            for (let j = eIdx + 2; j < tokens.length; j++) {
+                                                if (/\d{4}-\d{4}/.test(tokens[j])) {
+                                                    batch = tokens[j];
+                                                    break;
                                                 }
                                             }
-                                        }
 
-                                        rows.push({
-                                            name: name || 'Unknown',
-                                            email: email,
-                                            register_no: register_no,
-                                            department: department,
-                                            role: role,
-                                            password: password
-                                        });
+                                            // 7. Password: Default or heuristic
+                                            let password = 'welcome@123';
+                                            // Check if there's any token that looks like a password (often at the end if not using ID)
+                                            // But for this PDF, let's keep the default as it's not visible
+                                            
+                                            rows.push({
+                                                name: name || 'Unknown',
+                                                email: email,
+                                                register_no: register_no,
+                                                department: department,
+                                                year: year,
+                                                batch: batch,
+                                                role: role,
+                                                password: password
+                                            });
+                                        }
                                     }
                                 });
 
@@ -617,6 +761,8 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                                                 email: email,
                                                 register_no: regNo,
                                                 department: dept,
+                                                year: rowData[emailIdx + 2] || '',
+                                                batch: rowData[emailIdx + 3] || '',
                                                 role: role,
                                                 password: password
                                             });
@@ -675,6 +821,8 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                         <td class="small">${user.email || ''}</td>
                         <td>${user.register_no || ''}</td>
                         <td>${user.department || ''}</td>
+                        <td>${user.year || ''}</td>
+                        <td>${user.batch || ''}</td>
                         <td class="text-capitalize">${user.role}</td>
                         <td><code>${user.password || '******'}</code></td>
                         <td class="text-center">
@@ -717,6 +865,7 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                 e.preventDefault();
                 const index = document.getElementById('editRowIndex').value;
                 parsedExcelData[index] = {
+                    ...parsedExcelData[index],
                     name: document.getElementById('editName').value,
                     email: document.getElementById('editEmail').value,
                     register_no: document.getElementById('editID').value,
@@ -728,35 +877,133 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                 displayPreview(parsedExcelData);
             });
 
-            // Manual Form Row Management
-            function createManualRow(index) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><input type="text" name="name_${index}" placeholder="Full Name" required></td>
-                    <td><input type="email" name="email_${index}" placeholder="Email" required></td>
-                    <td><input type="text" name="reg_${index}" placeholder="Roll/Staff ID" required></td>
-                    <td><input type="text" name="dept_${index}" placeholder="Dept"></td>
-                    <td>
-                        <select name="role_${index}">
-                            <option value="student">Student</option>
-                            <option value="staff">Staff</option>
-                        </select>
-                    </td>
-                    <td><i class="fas fa-times remove-row-btn" onclick="this.closest('tr').remove()"></i></td>
-                    <input type="hidden" name="pass_${index}" value="welcome@123">
-                `;
-                return tr;
-            }
+            // Manual Entry Array Management
+            let manualUsersData = [];
 
-            // Add initial 1 row
-            for(let i=0; i<1; i++) {
-                manualTableBody.appendChild(createManualRow(Date.now() + i));
-            }
+            function displayManualPreview() {
+                const tbody = document.getElementById('manualTableBody');
+                const wrapper = document.getElementById('manualPreviewWrapper');
+                const emptyState = document.getElementById('manualEmptyState');
+                const submitBtn = document.getElementById('submitManualBtn');
+                const countBadge = document.getElementById('manualUserCount');
 
-            addRowBtn.addEventListener('click', () => {
-                if (manualTableBody.children.length < 100) {
-                    manualTableBody.appendChild(createManualRow(Date.now()));
+                countBadge.textContent = manualUsersData.length;
+                
+                if (manualUsersData.length === 0) {
+                    wrapper.classList.add('d-none');
+                    emptyState.classList.remove('d-none');
+                    submitBtn.disabled = true;
+                    tbody.innerHTML = '';
+                    return;
                 }
+
+                wrapper.classList.remove('d-none');
+                emptyState.classList.add('d-none');
+                submitBtn.disabled = false;
+
+                let html = '';
+                manualUsersData.forEach((user, index) => {
+                    const imgHtml = user.profile_photo ? `<img src="${user.profile_photo}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">` : '<i class="fas fa-user-circle text-muted fs-4"></i>';
+                    html += `<tr>
+                        <td class="text-center fw-bold align-middle">${index + 1}</td>
+                        <td class="align-middle">${user.name}</td>
+                        <td class="small align-middle">${user.email}</td>
+                        <td class="align-middle">${user.register_no}</td>
+                        <td class="align-middle">
+                            ${user.department}<br>
+                            <span class="text-muted small">${user.year ? user.year + ' yr' : ''} ${user.batch ? '| ' + user.batch : ''}</span>
+                        </td>
+                        <td class="text-capitalize align-middle">${user.role}</td>
+                        <td class="align-middle"><code>${user.password}</code></td>
+                        <td class="text-center align-middle">${imgHtml}</td>
+                        <td class="text-center align-middle">
+                            <div class="d-flex justify-content-center gap-2">
+                                <a href="javascript:void(0)" class="text-primary small" onclick="editManualUser(${index})"><i class="fas fa-edit"></i></a>
+                                <a href="javascript:void(0)" class="text-danger small" onclick="deleteManualUser(${index})"><i class="fas fa-trash"></i></a>
+                            </div>
+                        </td>
+                    </tr>`;
+                });
+                tbody.innerHTML = html;
+            }
+
+            window.deleteManualUser = function(index) {
+                if(confirm('Remove this user from the list?')) {
+                    manualUsersData.splice(index, 1);
+                    displayManualPreview();
+                }
+            };
+
+            let editingManualIndex = -1;
+            const addUserModal = new bootstrap.Modal(document.getElementById('addUserModal'));
+
+            window.editManualUser = function(index) {
+                editingManualIndex = index;
+                const user = manualUsersData[index];
+                document.getElementById('addName').value = user.name;
+                document.getElementById('addEmail').value = user.email;
+                document.getElementById('addID').value = user.register_no;
+                document.getElementById('addDept').value = user.department;
+                document.getElementById('addYear').value = user.year || '';
+                document.getElementById('addBatch').value = user.batch || '';
+                document.getElementById('addRole').value = user.role;
+                if(typeof toggleStudentFields === 'function') toggleStudentFields();
+                document.getElementById('addPassword').value = user.password;
+                
+                if (user.profile_photo) {
+                    document.getElementById('addPhotoBase64').value = user.profile_photo;
+                    document.getElementById('addPhotoPreview').src = user.profile_photo;
+                    document.getElementById('addPhotoPreviewContainer').classList.remove('d-none');
+                } else {
+                    document.getElementById('addPhotoBase64').value = '';
+                    document.getElementById('addPhotoPreviewContainer').classList.add('d-none');
+                }
+                
+                document.querySelector('#addUserModal .modal-title').textContent = "Edit User Detail";
+                document.querySelector('#addUserForm button[type="submit"]').innerHTML = "Update User Details";
+                addUserModal.show();
+            };
+
+            document.getElementById('openAddUserModalBtn').addEventListener('click', function() {
+                editingManualIndex = -1;
+                document.getElementById('addUserForm').reset();
+                document.getElementById('addPhotoBase64').value = '';
+                document.getElementById('addPhotoPreviewContainer').classList.add('d-none');
+                document.querySelector('#addUserModal .modal-title').textContent = "Add New User Detail";
+                document.querySelector('#addUserForm button[type="submit"]').innerHTML = "Save User to List";
+            });
+
+            document.getElementById('addUserForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const dataObj = {
+                    name: document.getElementById('addName').value,
+                    email: document.getElementById('addEmail').value,
+                    register_no: document.getElementById('addID').value,
+                    department: document.getElementById('addDept').value,
+                    year: document.getElementById('addYear').value,
+                    batch: document.getElementById('addBatch').value,
+                    role: document.getElementById('addRole').value,
+                    password: document.getElementById('addPassword').value,
+                    profile_photo: document.getElementById('addPhotoBase64').value || null
+                };
+
+                if (editingManualIndex !== -1) {
+                    manualUsersData[editingManualIndex] = dataObj;
+                    editingManualIndex = -1;
+                } else {
+                    if (manualUsersData.length >= 100) {
+                        alert('Maximum 100 users allowed manual entry.');
+                        return;
+                    }
+                    manualUsersData.push(dataObj);
+                }
+                
+                this.reset();
+                document.getElementById('addPhotoPreviewContainer').classList.add('d-none');
+                document.getElementById('addPhotoBase64').value = '';
+                addUserModal.hide();
+                displayManualPreview();
             });
 
             // Handle Submissions
@@ -816,40 +1063,125 @@ $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
                 });
             });
 
-            // Manual Form Submit
-            manualForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const rows = [];
-                const tableRows = manualTableBody.querySelectorAll('tr');
-                tableRows.forEach(tr => {
-                    rows.push({
-                        name: tr.querySelector('input[name^="name"]').value,
-                        email: tr.querySelector('input[name^="email"]').value,
-                        register_no: tr.querySelector('input[name^="reg"]').value,
-                        department: tr.querySelector('input[name^="dept"]').value,
-                        role: tr.querySelector('select').value,
-                        password: 'welcome@123' // Default password for manual entry
-                    });
-                });
+            // Upload & Cropping Logic
+            let cropper = null;
+            let currentFileInput = null;
+            const cropperModalEl = document.getElementById('cropperModal');
+            const cropperModal = new bootstrap.Modal(cropperModalEl);
+            const imageToCrop = document.getElementById('imageToCrop');
 
+            document.addEventListener('change', function(e) {
+                if (e.target.matches('input[type="file"][name^="photo_"], #addPhoto')) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        currentFileInput = e.target;
+                        const reader = new FileReader();
+                        reader.onload = function(event) {
+                            imageToCrop.src = event.target.result;
+                            cropperModal.show();
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                }
+            });
+
+            cropperModalEl.addEventListener('shown.bs.modal', function () {
+                cropper = new Cropper(imageToCrop, {
+                    aspectRatio: 1,
+                    viewMode: 1,
+                    autoCropArea: 1,
+                });
+            });
+
+            cropperModalEl.addEventListener('hidden.bs.modal', function () {
+                if (cropper) {
+                    cropper.destroy();
+                    cropper = null;
+                }
+                if(currentFileInput) currentFileInput.value = ''; // Reset input to allow re-selection
+            });
+
+            document.getElementById('btnCrop').addEventListener('click', function() {
+                if (!cropper || !currentFileInput) return;
+                
+                const canvas = cropper.getCroppedCanvas({ width: 400, height: 400 });
+                const base64Photo = canvas.toDataURL('image/jpeg');
+                
+                if (currentFileInput.id === 'addPhoto') {
+                    document.getElementById('addPhotoBase64').value = base64Photo;
+                    document.getElementById('addPhotoPreview').src = base64Photo;
+                    document.getElementById('addPhotoPreviewContainer').classList.remove('d-none');
+                } else {
+                    currentFileInput.dataset.base64 = base64Photo;
+                    let previewImg = currentFileInput.parentElement.querySelector('.crop-preview');
+                    if(!previewImg) {
+                        previewImg = document.createElement('img');
+                        previewImg.className = 'crop-preview mt-1 d-block bg-white';
+                        previewImg.style.width = '40px';
+                        previewImg.style.height = '40px';
+                        previewImg.style.borderRadius = '50%';
+                        previewImg.style.objectFit = 'cover';
+                        currentFileInput.parentElement.appendChild(previewImg);
+                    }
+                    previewImg.src = base64Photo;
+                    currentFileInput.style.color = "transparent";
+                }
+
+                cropperModal.hide();
+            });
+
+            // Manual Form Submit
+            manualForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
                 const formData = new FormData();
-                formData.append('users_json', JSON.stringify(rows));
+                formData.append('users_json', JSON.stringify(manualUsersData));
 
                 fetch('api/bulk_create_users.php', {
                     method: 'POST',
                     body: formData
                 })
-                .then(res => res.json())
+                .then(async res => {
+                    const text = await res.text();
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        console.error('Raw response:', text);
+                        throw new Error('Server returned non-JSON response: ' + text.substring(0, 500));
+                    }
+                })
                 .then(data => {
                     if (data.error) alert(data.error);
                     else handleResults(data);
                 })
                 .catch(err => {
                     console.error(err);
-                    alert('An error occurred during bulk creation.');
+                    alert(err.message || 'An error occurred during bulk creation.');
                 });
             });
         });
     </script>
+    
+    <!-- Cropper Modal -->
+    <div class="modal fade" id="cropperModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Crop Profile Picture</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div style="max-height: 400px; display:inline-block; width:100%;">
+                        <img id="imageToCrop" src="" style="max-width: 100%;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnCrop">Crop</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 </body>
 </html>

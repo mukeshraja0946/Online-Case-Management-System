@@ -133,14 +133,26 @@ document.addEventListener('DOMContentLoaded', function () {
                 chart.data.labels = data.labels;
 
                 // Update Datasets with colors
-                chart.data.datasets = data.datasets.map(ds => ({
-                    ...ds,
-                    backgroundColor: colors[ds.label] || '#94a3b8',
-                    borderColor: 'transparent',
-                    borderWidth: 0,
-                    borderRadius: 4,
-                    barThickness: range === '1day' ? 30 : (range === '1week' ? 60 : (range === '1month' ? 40 : (range === 'all' ? 35 : 45)))
-                }));
+                chart.data.datasets = data.datasets.map(ds => {
+                    const baseDs = {
+                        ...ds,
+                        borderRadius: ds.type === 'line' ? 0 : 4,
+                        barThickness: ds.type === 'line' ? undefined : (range === '1day' ? 30 : (range === '1week' ? 60 : (range === '1month' ? 40 : (range === 'all' ? 35 : 45))))
+                    };
+                    if (ds.type === 'line') {
+                        baseDs.order = 0;
+                    } else {
+                        baseDs.backgroundColor = colors[ds.label] || '#94a3b8';
+                        baseDs.borderColor = 'transparent';
+                        baseDs.borderWidth = 0;
+                        baseDs.order = 1;
+                    }
+                    return baseDs;
+                });
+
+                // Hide the "Total Trend" from the legend
+                chart.options.plugins.legend.labels = chart.options.plugins.legend.labels || {};
+                chart.options.plugins.legend.labels.filter = (item) => item.text !== 'Total Trend';
 
                 // Handle Empty Data
                 const hasData = data.datasets.some(ds => ds.data.some(val => val > 0));

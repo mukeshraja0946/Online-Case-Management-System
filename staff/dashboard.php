@@ -1,10 +1,20 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 session_start();
 require_once '../config/db.php';
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] != 'staff') {
     header("Location: ../auth/login.php");
     exit();
+}
+
+if (!isset($conn) || !$conn) {
+    die("Error: MySQL database connection is not initialized. Please check your configuration.");
+}
+
+if ($conn->connect_error) {
+    die("Database connection failed: " . $conn->connect_error);
 }
 
 $user_id = $_SESSION['user_id'];
@@ -27,111 +37,104 @@ if ($stmt_user) {
     }
 }
 
-// Fetch Global Stats
-$sql_stats = "SELECT 
+// Fetch Staff Specific Stats (Cases created by this staff)
+$sql_total_cases = "SELECT COUNT(*) as total FROM cases WHERE created_by_staff = ?";
+$stmt_total = $conn->prepare($sql_total_cases);
+$total_cases_created = 0;
+if ($stmt_total) {
+    $stmt_total->bind_param("i", $user_id);
+    $stmt_total->execute();
+    $total_res = $stmt_total->get_result()->fetch_assoc();
+    $total_cases_created = $total_res['total'] ?? 0;
+}
+
+// Fetch Student Submissions Stats (Global for staff to see all student responses to their cases or all cases)
+$sql_sub_stats = "SELECT 
     COUNT(*) as total,
     SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
     SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END) as approved,
-    SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END) as rejected,
-    SUM(CASE WHEN DATE(created_at) = CURRENT_DATE() THEN 1 ELSE 0 END) as today
-FROM cases WHERE deleted_by_staff = 0";
+    SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END) as rejected
+FROM case_submissions";
+$sub_query = $conn->query($sql_sub_stats);
+$sub_stats = [
+    'total' => 0,
+    'pending' => 0,
+    'approved' => 0,
+    'rejected' => 0
+];
 
-$result = $conn->query($sql_stats);
-$stats = $result->fetch_assoc();
+if ($sub_query) {
+    $fetched_stats = $sub_query->fetch_assoc();
+    $sub_stats['total'] = (int)($fetched_stats['total'] ?? 0);
+    $sub_stats['pending'] = (int)($fetched_stats['pending'] ?? 0);
+    $sub_stats['approved'] = (int)($fetched_stats['approved'] ?? 0);
+    $sub_stats['rejected'] = (int)($fetched_stats['rejected'] ?? 0);
+}
 
-// Fetch Latest Pending Cases (Added student name joining)
-$sql_pending = "SELECT c.*, u.name as student_name 
-                FROM cases c 
-                JOIN users u ON c.student_id = u.id 
-                WHERE c.status = 'Pending' AND c.deleted_by_staff = 0 
-                ORDER BY c.created_at ASC LIMIT 5";
-$pending_cases = $conn->query($sql_pending);
-
-// Fetch Monthly Trends (Last 6 Months) - MOVED TO AJAX
-// The chart data is now fetched via get_cases_by_filter.php to match the student dashboard
-
-// Resolution Performance
-$avg_resolution_time = "N/A";
-$approval_rate = 0;
-$total_resolved = $stats['approved'] + $stats['rejected'];
-
-if ($total_resolved > 0) {
-    $approval_rate = number_format(($stats['approved'] / $total_resolved) * 100, 2);
-    
-    // Calculate Last Response Time (Most recent processed case)
-    $sql_res_time = "SELECT TIMESTAMPDIFF(SECOND, created_at, updated_at) as last_seconds 
-                    FROM cases 
-                    WHERE status IN ('Approved', 'Rejected') 
-                    AND updated_at IS NOT NULL 
-                    AND updated_at > created_at
-                    ORDER BY updated_at DESC LIMIT 1";
-    $res_time_result = $conn->query($sql_res_time);
-    
-    if ($res_time_result && $row = $res_time_result->fetch_assoc()) {
-        $seconds = $row['last_seconds'];
-        if ($seconds) {
-            $days = floor($seconds / 86400);
-            $hours = floor(($seconds % 86400) / 3600);
-            $minutes = floor(($seconds % 3600) / 60);
-
-            if ($days > 0) {
-                $avg_resolution_time = $days . "d " . $hours . "h";
-            } elseif ($hours > 0) {
-                $avg_resolution_time = $hours . "h " . $minutes . "m";
-            } else {
-                $avg_resolution_time = $minutes . "m";
-            }
-        }
+// Fetch Latest Pending Submissions
+$sql_pending = "SELECT s.*, c.title, u.name as student_name 
+                FROM case_submissions s 
+                JOIN cases c ON s.case_id = c.id 
+                JOIN users u ON s.student_id = u.id 
+                WHERE s.status = 'Pending' 
+                ORDER BY s.submitted_at ASC LIMIT 5";
+$pending_submissions_query = $conn->query($sql_pending);
+$pending_submissions_list = [];
+if ($pending_submissions_query) {
+    while($row = $pending_submissions_query->fetch_assoc()) {
+        $pending_submissions_list[] = $row;
     }
 }
 
-// Fetch Platform-wide Activity (Last 5 updates system-wide)
-$sql_platform_activity = "SELECT c.id, c.case_type, c.status, c.created_at, c.updated_at, u.name as student_name 
-                        FROM cases c 
-                        JOIN users u ON c.student_id = u.id 
-                        WHERE c.deleted_by_staff = 0 
-                        ORDER BY c.updated_at DESC LIMIT 5";
-$platform_activities = $conn->query($sql_platform_activity);
+// Calculate Platform Stats
+$total_resolved = $sub_stats['approved'] + $sub_stats['rejected'];
+$approval_rate = ($total_resolved > 0) ? number_format(($sub_stats['approved'] / $total_resolved) * 100, 2) : 0;
 
-// Fetch Global Last Update
-$sql_last_global = "SELECT MAX(updated_at) as last_activity FROM cases WHERE deleted_by_staff = 0";
-$last_global_res = $conn->query($sql_last_global);
-$last_global = ($last_global_res && $row = $last_global_res->fetch_assoc()) ? $row['last_activity'] : null;
-$last_global_str = $last_global ? date('d M, H:i', strtotime($last_global)) : "No Recent Activity";
-
-// Helper function for time ago (Staff version)
-if (!function_exists('get_platform_time_ago')) {
-    function get_platform_time_ago($timestamp) {
-        $time_ago = strtotime($timestamp);
-        $current_time = time();
-        $time_difference = $current_time - $time_ago;
-        $seconds = $time_difference;
-        $minutes      = round($seconds / 60);           // value 60 is seconds  
-        $hours        = round($seconds / 3600);         //value 3600 is 60 minutes * 60 sec  
-        $days         = round($seconds / 86400);        //86400 = 24 * 60 * 60;  
-        $weeks        = round($seconds / 604800);       // 7*24*60*60;  
-        $months       = round($seconds / 2629440);      //((365+365+365+365+366)/5/12)*24*60*60  
-        $years        = round($seconds / 31553280);     //(365+365+365+365+366)/5 * 24 * 60 * 60  
-        
-        if($seconds <= 60) return "Just Now";
-        else if($minutes <= 60) return ($minutes==1) ? "1m ago" : "$minutes m ago";
-        else if($hours <= 24) return ($hours==1) ? "1h ago" : "$hours h ago";
-        else if($days <= 7) return ($days==1) ? "yesterday" : "$days d ago";
-        else if($weeks <= 4.3) return ($weeks==1) ? "1w ago" : "$weeks w ago";
-        else if($months <= 12) return ($months==1) ? "1 month ago" : "$months months ago";
-        else return ($years==1) ? "1 year ago" : "$years years ago";
+// Fetch Recent Activity (Submissions)
+$sql_act = "SELECT s.*, c.title, u.name as student_name 
+            FROM case_submissions s 
+            JOIN cases c ON s.case_id = c.id 
+            JOIN users u ON s.student_id = u.id 
+            ORDER BY s.submitted_at DESC LIMIT 5";
+$activities_query = $conn->query($sql_act);
+$activities_list = [];
+if ($activities_query) {
+    while($row = $activities_query->fetch_assoc()) {
+        $activities_list[] = $row;
     }
 }
 
-// Handle Delete Request
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
-    $delete_id = $_POST['delete_id'];
-    $del_stmt = $conn->prepare("UPDATE cases SET deleted_by_staff = 1 WHERE id = ?");
-    $del_stmt->bind_param("i", $delete_id);
-    if ($del_stmt->execute()) {
-        header("Location: dashboard.php?msg=deleted");
-        exit();
+// Initial Categorical Analytics (Global)
+$labels = []; $data = [];
+$cat_sql = "SELECT c.case_type, COUNT(s.id) as total 
+           FROM case_submissions s 
+           JOIN cases c ON s.case_id = c.id 
+           GROUP BY c.case_type";
+$cat_res = $conn->query($cat_sql);
+if ($cat_res) {
+    while($row = $cat_res->fetch_assoc()) {
+        $labels[] = $row['case_type'];
+        $data[] = (int)$row['total'];
     }
+}
+if(empty($labels)) {
+    $res_all = $conn->query("SELECT type_name FROM case_types LIMIT 5");
+    while($row = $res_all->fetch_assoc()) { $labels[] = $row['type_name']; $data[] = 0; }
+}
+
+function get_platform_time_ago($timestamp) {
+    $time_ago = strtotime($timestamp);
+    $current_time = time();
+    $time_difference = $current_time - $time_ago;
+    $seconds = $time_difference;
+    $minutes = round($seconds / 60);           
+    $hours = round($seconds / 3600);         
+    $days = round($seconds / 86400);        
+    
+    if($seconds <= 60) return "Just Now";
+    else if($minutes <= 60) return ($minutes==1) ? "1m ago" : "$minutes m ago";
+    else if($hours <= 24) return ($hours==1) ? "1h ago" : "$hours h ago";
+    else return ($days==1) ? "yesterday" : "$days d ago";
 }
 ?>
 
@@ -142,18 +145,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Staff Dashboard - OCMS</title>
     <link rel="icon" type="image/png" href="../assets/img/OCMS_logo.png">
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- CSS -->
-    <link href="../assets/css/style.css?v=<?php echo time(); ?>" rel="stylesheet">
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="../assets/css/style.css?v=<?php echo time(); ?>" rel="stylesheet">
 </head>
 <body>
     <div class="wrapper">
@@ -162,61 +158,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
             <div class="sidebar-header">
                 <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
             </div>
-            
             <div class="sidebar-menu">
                 <div class="menu-label">Menu</div>
-                <a href="dashboard.php" class="active"><i class="fas fa-th-large"></i> Dashboard</a>
-                <a href="received_cases.php"><i class="fas fa-inbox"></i> Received Cases</a>
-                <a href="approved_cases.php"><i class="fas fa-check-circle"></i> Approved</a>
-                <a href="rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected</a>
+                <a href="dashboard.php" class="menu-item active"><i class="fas fa-th-large"></i> Dashboard</a>
+                <a href="add_case.php" class="menu-item"><i class="fas fa-plus-circle"></i> Create Case</a>
+                <a href="received_cases.php" class="menu-item"><i class="fas fa-inbox"></i> Received Submissions</a>
+                <a href="approved_cases.php" class="menu-item"><i class="fas fa-check-circle"></i> Approved</a>
+                <a href="rejected_cases.php" class="menu-item"><i class="fas fa-times-circle"></i> Rejected</a>
                 
                 <div class="menu-label menu-bottom-section mt-3">Account</div>
-                <a href="history.php"><i class="fas fa-history"></i> History</a>
-                <a href="../auth/profile.php"><i class="fas fa-cog"></i> Settings</a>
-                
+                <a href="history.php" class="menu-item"><i class="fas fa-history"></i> History</a>
+                <a href="../auth/profile.php" class="menu-item"><i class="fas fa-cog"></i> Settings</a>
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
         </div>
         
         <!-- Main Content -->
         <div class="main_content">
-            <!-- Topbar -->
             <div class="topbar">
                 <div class="header-text">
-                    <h2>Online Case Management</h2>
-                    <p>Welcome back, <?php echo htmlspecialchars($staff_name); ?>! Here's a summary of student cases.</p>
+                    <h2>Staff Dashboard</h2>
+                    <p>Manage cases and review student responses.</p>
                 </div>
-                <div class="search-bar">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="dashboard-search" placeholder="Search student cases...">
-                </div>
-                
                 <div class="user-nav">
-
                     <button class="nav-icon-btn"><i class="fas fa-bell"></i></button>
-                    
                     <a href="../auth/profile.php?view=1" class="text-decoration-none">
                         <div class="user-profile">
-                            <div class="avatar shadow-sm" style="overflow: hidden; background: var(--secondary-color);">
-                                <?php if(isset($profile_photo) && $profile_photo): ?>
-                                    <?php 
-                                        $photo = trim($profile_photo);
-                                        $pic_src = (strpos($photo, 'http') === 0) 
-                                            ? $photo 
-                                            : "../uploads/profile/" . $photo;
-                                    ?>
-                                    <img src="<?php echo htmlspecialchars($pic_src); ?>" style="width: 100%; height: 100%; object-fit: cover;" referrerpolicy="no-referrer">
+                            <div class="avatar shadow-sm" style="overflow: hidden;">
+                                <?php 
+                                $staff_photo_path = !empty($profile_photo) ? "../uploads/profile/" . $profile_photo : null;
+                                if($staff_photo_path && file_exists(__DIR__ . "/../uploads/profile/" . $profile_photo)): ?>
+                                    <img src="<?php echo $staff_photo_path; ?>?v=<?php echo time(); ?>" style="width: 100%; height: 100%; object-fit: cover;">
                                 <?php else: ?>
-                                    <?php echo strtoupper(substr($staff_name, 0, 1)); ?>
+                                    <div class="w-100 h-100 d-flex align-items-center justify-content-center bg-blue-gradient text-white fw-bold" style="font-size: 1.2rem;">
+                                        <?php echo strtoupper(substr($staff_name, 0, 1)); ?>
+                                    </div>
                                 <?php endif; ?>
                             </div>
-                            <div class="d-flex flex-column text-center" style="line-height: 1.2;">
-                                <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
-                                    <?php echo htmlspecialchars($staff_name); ?>
-                                </span>
-                                <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
-                                    <?php echo htmlspecialchars($staff_id_val); ?>
-                                </span>
+                            <div class="d-flex flex-column text-center">
+                                <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);"><?php echo htmlspecialchars($staff_name); ?></span>
+                                <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;"><?php echo htmlspecialchars($staff_id_val); ?></span>
                             </div>
                         </div>
                     </a>
@@ -226,121 +207,94 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
             <!-- Stats Grid -->
             <div class="dashboard-grid">
                 <div class="stat-card">
-                    <div class="stat-icon bg-orange-gradient"><i class="fas fa-folder-open"></i></div>
-                    <div class="stat-title">Total Cases</div>
-                    <div class="stat-value text-orange"><?php echo $stats['total']; ?></div>
+                    <div class="stat-icon bg-orange-gradient"><i class="fas fa-folder-plus"></i></div>
+                    <div class="stat-title">Cases Created</div>
+                    <div class="stat-value text-orange"><?php echo $total_cases_created; ?></div>
                 </div>
-                
                 <div class="stat-card">
-                    <div class="stat-icon bg-blue-gradient"><i class="fas fa-clock"></i></div>
-                    <div class="stat-title">New Request</div>
-                    <div class="stat-value text-blue"><?php echo $stats['pending']; ?></div>
+                    <div class="stat-icon bg-teal-gradient"><i class="fas fa-file-invoice"></i></div>
+                    <div class="stat-title">Total Submissions</div>
+                    <div class="stat-value text-teal"><?php echo $sub_stats['total']; ?></div>
                 </div>
-                
-                <a href="approved_cases.php" class="stat-card text-decoration-none">
+                <div class="stat-card">
+                    <div class="stat-icon bg-blue-gradient"><i class="fas fa-inbox"></i></div>
+                    <div class="stat-title">Pending</div>
+                    <div class="stat-value text-blue"><?php echo $sub_stats['pending']; ?></div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-icon bg-green-gradient"><i class="fas fa-check-circle"></i></div>
                     <div class="stat-title">Approved</div>
-                    <div class="stat-value text-green"><?php echo $stats['approved']; ?></div>
-                </a>
-                
-                <a href="rejected_cases.php" class="stat-card text-decoration-none">
+                    <div class="stat-value text-green"><?php echo $sub_stats['approved']; ?></div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-icon bg-purple-gradient"><i class="fas fa-times-circle"></i></div>
                     <div class="stat-title">Rejected</div>
-                    <div class="stat-value text-purple"><?php echo $stats['rejected']; ?></div>
-                </a>
-
-                <div class="stat-card">
-                    <div class="stat-icon" style="background: linear-gradient(135deg, #0EA5E9 0%, #38BDF8 100%);"><i class="fas fa-calendar-check"></i></div>
-                    <div class="stat-title">Today</div>
-                    <div class="stat-value text-blue"><?php echo $stats['today']; ?> <span style="font-size: 0.7rem; color: var(--success-color);">Cases</span></div>
+                    <div class="stat-value text-purple"><?php echo $sub_stats['rejected']; ?></div>
                 </div>
             </div>
 
-            <!-- Content Grid -->
-            <div class="content-grid mt-4">
-                <!-- Main Content Area -->
-                <div class="main-content-area">
-                    <!-- Monthly Case Trends Chart -->
-                    <div class="chart-container mb-4">
-                        <div class="chart-header">
-                            <div class="d-flex align-items-center gap-3">
-                                <h5 class="mb-0">Monthly Case Trends</h5>
-                            </div>
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-light dropdown-toggle" type="button" id="chartFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="font-size: 0.75rem; border-radius: 8px;">
-                                    Last 6 Months
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="chartFilterDropdown" style="font-size: 0.8rem;">
-                                    <li><a class="dropdown-item chart-filter" href="#" data-range="1day">Last 1 Day</a></li>
-                                    <li><a class="dropdown-item chart-filter" href="#" data-range="1week">Last 1 Week</a></li>
-                                    <li><a class="dropdown-item chart-filter" href="#" data-range="1month">Last 1 Month</a></li>
-                                    <li><a class="dropdown-item chart-filter active" href="#" data-range="6months">Last 6 Months</a></li>
-                                    <li><a class="dropdown-item chart-filter" href="#" data-range="1year">Last 1 Year</a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item chart-filter" href="#" data-range="all">All Time</a></li>
-                                </ul>
-                            </div>
+            <!-- Layout Shift -->
+            <div class="row mt-4 px-3 align-items-start">
+                <div class="col-lg-8">
+                    <!-- Analytics Card -->
+                    <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px; background: #ffffff; overflow: hidden;">
+                        <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
+                             <h6 class="fw-bold mb-0" style="color: #1e293b; font-size: 1.1rem;">Overall Submission Trends</h6>
+                             <div class="d-flex align-items-center gap-2">
+                                 <div class="filter-group d-flex bg-light p-1 rounded-3" style="border: 1px solid #e2e8f0;">
+                                     <select id="statusFilter" class="form-select form-select-sm border-0 bg-transparent py-1" style="width: auto; min-width: 110px; font-size: 0.8rem; box-shadow: none; cursor:pointer;">
+                                         <option value="all">All Status</option>
+                                         <option value="Pending">Pending</option>
+                                         <option value="Approved">Approved</option>
+                                         <option value="Rejected">Rejected</option>
+                                     </select>
+                                     <div class="vr mx-2 my-1" style="opacity: 0.1;"></div>
+                                     <select id="timeRangeFilter" class="form-select form-select-sm border-0 bg-transparent py-1" style="width: auto; min-width: 110px; font-size: 0.8rem; box-shadow: none; cursor:pointer;">
+                                         <option value="day">Today</option>
+                                         <option value="week">This Week</option>
+                                         <option value="month" selected>This Month</option>
+                                         <option value="year">Yearly</option>
+                                         <option value="all">All Time</option>
+                                     </select>
+                                 </div>
+                             </div>
                         </div>
-                        <div style="height: 220px;">
-                            <canvas id="monthlyCasesChart"></canvas>
+                        <div class="card-body px-4 pb-4 pt-1">
+                            <div style="height: 240px; position: relative; width: 100%;">
+                                <canvas id="submissionChart" height="100" style="height: 240px !important; width: 100%;"></canvas>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Recent Pending Cases Table -->
-                    <div class="table-card">
-                        <div class="table-header">
-                            <h5>Latest Pending Requests</h5>
-                            <a href="received_cases.php" style="font-size: 0.85rem; color: var(--primary-color);">View All</a>
+                    <div class="table-card p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h5 class="fw-bold mb-0">Recent Student Submissions</h5>
+                            <a href="received_cases.php" class="btn btn-sm btn-outline-primary px-3">View All</a>
                         </div>
-                        
                         <div class="table-responsive">
                             <table class="table align-middle">
                                 <thead>
-                                    <tr class="text-center">
+                                    <tr>
                                         <th>Student</th>
-                                        <th>Case Type</th>
-                                        <th>Uploaded File</th>
-                                        <th>Description</th>
-                                        <th>Updated Date & Time</th>
+                                        <th>Case Title</th>
+                                        <th>Submitted On</th>
                                         <th>Status</th>
-                                        <th>Actions</th>
+                                        <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php if ($pending_cases->num_rows > 0): ?>
-                                        <?php while($row = $pending_cases->fetch_assoc()): ?>
-                                            <tr class="text-center">
-                                                <td style="font-weight: 600; color: var(--text-color);">
-                                                    <?php echo htmlspecialchars($row['student_name']); ?>
-                                                </td>
-                                                <td><?php echo htmlspecialchars($row['case_type']); ?></td>
-                                                <td>
-                                                    <?php if ($row['attachment']): ?>
-                                                        <a href="../uploads/<?php echo $row['attachment']; ?>" target="_blank" class="link-offset-2" style="font-size: 0.9rem; text-decoration: none; color: #0ea5e9; font-weight: 600;">
-                                                            <i class="fas fa-file-download me-1"></i> View
-                                                        </a>
-                                                    <?php else: ?>
-                                                        <span class="text-muted">No File</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td title="<?php echo htmlspecialchars($row['description']); ?>">
-                                                    <div class="mx-auto" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                                        <?php echo htmlspecialchars($row['description']); ?>
-                                                    </div>
-                                                </td>
-                                                <td><?php echo date('M d, h:i A', strtotime($row['incident_date'])); ?></td>
-                                                <td>
-                                                    <span class="status-badge status-<?php echo $row['status']; ?>">
-                                                        <?php echo $row['status']; ?>
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <a href="received_cases.php" class="text-primary text-decoration-underline" style="font-size: 0.9rem;">Review</a>
-                                                </td>
+                                    <?php if (!empty($pending_submissions_list)): ?>
+                                        <?php foreach ($pending_submissions_list as $row): ?>
+                                            <tr>
+                                                <td class="fw-bold"><?php echo htmlspecialchars($row['student_name']); ?></td>
+                                                <td><?php echo htmlspecialchars($row['title']); ?></td>
+                                                <td><?php echo date('M d, h:i A', strtotime($row['submitted_at'])); ?></td>
+                                                <td><span class="status-badge status-Pending">Pending</span></td>
+                                                <td><a href="received_cases.php" class="btn btn-sm btn-primary px-3 rounded-pill">Review</a></td>
                                             </tr>
-                                        <?php endwhile; ?>
+                                        <?php endforeach; ?>
                                     <?php else: ?>
-                                        <tr><td colspan="7" class="text-center text-muted">No pending cases</td></tr>
+                                        <tr><td colspan="5" class="text-center text-muted py-4">No pending submissions</td></tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>
@@ -348,112 +302,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
                     </div>
                 </div>
 
-                <!-- Sidebar Content Area -->
-                <div class="sidebar-content-area">
-                    <!-- Action Card -->
-                    <div class="feature-card mb-4" style="height: auto; min-height: 180px;">
-                        <h3>Review Pending<br>Cases</h3>
-                        <div class="card-label">Quick Processing</div>
-                        <a href="received_cases.php" class="feature-btn">Review Now <i class="fas fa-arrow-right ml-2"></i></a>
-                        
-                        <!-- Decorative icon -->
-                        <i class="fas fa-search-plus" style="position: absolute; bottom: -5px; right: -5px; font-size: 3.5rem; opacity: 0.1; transform: rotate(-15deg);"></i>
-                    </div>
-
-                    <!-- System Performance -->
-                    <div class="activity-card mb-4" style="padding: 24px;">
-                        <div class="activity-header d-flex justify-content-between align-items-center mb-4 p-0">
-                            <h5 class="m-0" style="font-weight: 700; color: var(--text-color); letter-spacing: -0.5px;">System Performance</h5>
-                            <span class="badge rounded-pill bg-success-soft text-success" style="font-size: 0.7rem; font-weight: 700; padding: 5px 12px; letter-spacing: 0.5px; text-transform: uppercase;">
-                                Optimal
-                            </span>
-                        </div>
-                        
-                        <div class="performance-list d-flex flex-column gap-4">
-                            <!-- Overall Stats -->
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center gap-3">
-                                    <div class="bg-soft-purple text-purple rounded-3 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
-                                        <i class="fas fa-check-double" style="font-size: 1rem;"></i>
-                                    </div>
-                                    <div>
-                                        <small class="text-muted d-block mb-1" style="font-size: 0.7rem; font-weight: 500;">Total Resolved</small>
-                                        <span style="font-weight: 800; font-size: 1.1rem; color: var(--text-color);"><?php echo $total_resolved; ?></span>
-                                    </div>
-                                </div>
-                                <div class="text-end">
-                                    <small class="text-muted d-block mb-1" style="font-size: 0.7rem; font-weight: 500;">Last Activity</small>
-                                    <span style="font-weight: 600; font-size: 0.85rem; color: var(--text-color); opacity: 0.8;"><?php echo $last_global_str; ?></span>
-                                </div>
-                            </div>
-
-                            <!-- Approval Rate with Progress -->
-                            <div>
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <div class="d-flex align-items-center gap-2">
-                                        <i class="fas fa-percentage text-green" style="font-size: 0.75rem;"></i>
-                                        <small class="text-muted" style="font-size: 0.75rem; font-weight: 600;">System Approval Rate</small>
-                                    </div>
-                                    <span style="font-weight: 700; font-size: 0.85rem; color: var(--success-color);"><?php echo $approval_rate; ?>%</span>
-                                </div>
-                                <div class="progress" style="height: 6px; border-radius: 10px; background: rgba(0,0,0,0.05);">
-                                    <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo $approval_rate; ?>%; border-radius: 10px;"></div>
-                                </div>
-                            </div>
-
-                            <!-- Response Time -->
-                            <div class="p-3 border rounded-4 d-flex align-items-center gap-3" style="background: rgba(0,0,0,0.01);">
-                                <div class="bg-soft-blue text-blue rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
-                                    <i class="fas fa-bolt" style="font-size: 0.8rem;"></i>
-                                </div>
-                                <div>
-                                    <small class="text-muted d-block" style="font-size: 0.65rem; font-weight: 600;">Avg. Response Time</small>
-                                    <span style="font-weight: 700; font-size: 0.95rem; color: var(--text-color);"><?php echo $avg_resolution_time; ?></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Recent Platform Activity -->
-                    <div class="activity-card">
-                        <div class="activity-header mb-4">
-                            <h5 class="m-0" style="font-weight: 700; color: var(--text-color); letter-spacing: -0.5px;">Recent Activities</h5>
-                        </div>
+                <!-- Right Side: Sidebar Info -->
+                <div class="col-lg-4">
+                    <div class="activity-card p-4 mb-4">
+                        <h5 class="fw-bold mb-4">Live Activity Feed</h5>
                         <div class="activity-list">
-                            <?php if ($platform_activities && $platform_activities->num_rows > 0): ?>
-                                <?php while($act = $platform_activities->fetch_assoc()): ?>
-                                    <?php 
-                                        $icon = 'fa-file-alt';
-                                        $color = 'var(--primary-color)';
-                                        $bg = 'rgba(186, 230, 253, 0.2)';
-                                        
-                                        if($act['status'] == 'Approved') {
-                                            $icon = 'fa-check-circle';
-                                            $color = 'var(--success-color)';
-                                            $bg = 'rgba(51, 198, 159, 0.1)';
-                                        } else if($act['status'] == 'Rejected') {
-                                            $icon = 'fa-times-circle';
-                                            $color = 'var(--danger-color)';
-                                            $bg = 'rgba(255, 91, 91, 0.1)';
-                                        }
-                                        
-                                        $activity_type = ($act['created_at'] == $act['updated_at']) ? 'submitted a case' : 'case was '.strtolower($act['status']);
-                                        $time_ago = get_platform_time_ago($act['updated_at']);
-                                    ?>
-                                    <div class="activity-item">
-                                        <div class="activity-icon" style="background: <?php echo $bg; ?>; color: <?php echo $color; ?>;">
-                                            <i class="fas <?php echo $icon; ?>"></i>
+                            <?php if (!empty($activities_list)): ?>
+                                <?php foreach ($activities_list as $act): ?>
+                                    <div class="activity-item d-flex gap-3 mb-4">
+                                        <div class="activity-icon bg-light rounded-circle p-2 text-primary d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; min-width: 40px;">
+                                            <i class="fas fa-user-edit" style="font-size: 0.9rem;"></i>
                                         </div>
                                         <div class="activity-info">
-                                            <h6 style="font-size: 0.85rem;"><?php echo htmlspecialchars($act['student_name']); ?></h6>
-                                            <p style="font-size: 0.7rem; color: var(--text-muted);"><?php echo $activity_type; ?> • <?php echo $time_ago; ?></p>
+                                            <h6 class="mb-1" style="font-size: 0.9rem; font-weight: 700;"><?php echo htmlspecialchars($act['student_name']); ?></h6>
+                                            <p class="mb-0 text-muted" style="font-size: 0.8rem; line-height: 1.2;">Responded to "<?php echo htmlspecialchars($act['title']); ?>"</p>
+                                            <small class="text-muted" style="font-size: 0.7rem;"><?php echo get_platform_time_ago($act['submitted_at']); ?></small>
                                         </div>
                                     </div>
-                                <?php endwhile; ?>
+                                <?php endforeach; ?>
                             <?php else: ?>
-                                <p class="text-muted text-center" style="font-size: 0.85rem;">No activity yet</p>
+                                <p class="text-muted text-center pt-4">No recent activity detected.</p>
                             <?php endif; ?>
                         </div>
+                        <a href="received_cases.php" class="btn btn-light w-100 btn-sm fw-bold mt-2">View History</a>
+                    </div>
+                    
+                    <div class="feature-card p-4">
+                        <h6 class="fw-bold mb-2">Need a faster way?</h6>
+                        <p class="small opacity-75 mb-3" style="font-size: 0.75rem;">You can quickly add new case categories or student groups in the settings panel.</p>
+                        <a href="add_case.php" class="btn btn-sm btn-light w-100 fw-bold rounded-pill">Create New Case</a>
                     </div>
                 </div>
             </div>
@@ -461,106 +338,84 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../assets/js/theme.js"></script>
-    <script src="../assets/js/search.js"></script>
-    <script src="../assets/js/notifications.js"></script>
     <script>
-        // Dynamic Chart implementation for Staff Dashboard
+        // PASS DATA TO JAVASCRIPT (Step 4)
+        let labels = <?php echo json_encode($labels); ?>;
+        let data = <?php echo json_encode($data); ?>;
+
         document.addEventListener('DOMContentLoaded', function() {
-            const ctx = document.getElementById('monthlyCasesChart').getContext('2d');
-            let myChart = null;
+            const chartCanvas = document.getElementById('submissionChart');
+            if(!chartCanvas) return;
+            const ctx = chartCanvas.getContext('2d');
+            let staffChart;
 
-            const colors = {
-                'Academic': '#60A5FA', // Soft Blue
-                'Disciplinary': '#F87171', // Soft Red
-                'Hostel': '#34D399', // Soft Green
-                'Library': '#FBBF24', // Soft Amber
-                'Other': '#A78BFA' // Soft Purple
-            };
-
-            function initChart() {
-                myChart = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: [],
-                        datasets: []
+            // Step 5: CREATE BAR CHART
+            staffChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Total Submissions',
+                        data: data,
+                        backgroundColor: ['#ff4d4d','#33cc33','#3399ff','#ffcc00','#ff6600','#7e22ce','#128f17','#5856d6'],
+                        borderRadius: 6,
+                        barThickness: 'flex',
+                        maxBarThickness: 60
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 1200, easing: 'easeOutQuart' },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { backgroundColor: '#1e293b', padding: 10, displayColors: false }
                     },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'left',
-                                labels: {
-                                    usePointStyle: true,
-                                    pointStyle: 'circle',
-                                    padding: 15,
-                                    font: { size: 11, weight: '500' },
-                                    color: '#64748b'
-                                }
-                            },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            suggestedMax: 5,
+                            grid: { color: '#f1f5f9', drawBorder: false },
+                            ticks: { stepSize: 1, color: '#94a3b8' },
+                            border: { color: '#7e22ce', width: 2 }
                         },
-                        scales: {
-                            y: {
-                                stacked: true,
-                                beginAtZero: true,
-                                grid: { drawBorder: false, color: '#f1f5f9' },
-                                ticks: { font: { size: 10 } }
-                            },
-                            x: {
-                                stacked: true,
-                                grid: { display: false },
-                                ticks: { 
-                                    font: { size: 10 },
-                                    autoSkip: false,
-                                    maxRotation: 45,
-                                    minRotation: 45
-                                }
-                            }
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#475569', font: { family: 'Outfit', weight: '600' } },
+                            border: { color: '#7e22ce', width: 2 }
                         }
                     }
-                });
-            }
+                }
+            });
 
-            function fetchChartData(range) {
-                fetch(`get_cases_by_filter.php?range=${range}`)
-                    .then(response => response.json())
+            function updateStaffChart(range, status) {
+                chartCanvas.style.opacity = '0.5';
+                fetch(`get_cases_by_filter.php?range=${range}&status=${status}`)
+                    .then(res => res.json())
                     .then(data => {
-                        if (data.labels) {
-                            myChart.data.labels = data.labels;
-                            myChart.data.datasets = data.datasets.map(ds => ({
-                                ...ds,
-                                backgroundColor: colors[ds.label] || '#94a3b8',
-                                borderColor: 'transparent',
-                                borderWidth: 0,
-                                borderRadius: 4,
-                                barThickness: range === '1day' ? 30 : (range === '1week' ? 60 : (range === '1month' ? 40 : (range === 'all' ? 35 : 45)))
-                            }));
-                            myChart.update();
+                        chartCanvas.style.opacity = '1';
+                        if (staffChart) {
+                            staffChart.data.labels = data.labels;
+                            staffChart.data.datasets[0].data = data.data;
+                            staffChart.data.datasets[0].backgroundColor = data.colors;
+                            staffChart.data.datasets[0].hoverBackgroundColor = data.colors;
+                            staffChart.options.scales.y.suggestedMax = Math.max(...data.data, 5);
+                            staffChart.update();
                         }
                     })
-                    .catch(error => console.error('Error fetching chart data:', error));
+                    .catch(e => {
+                        console.error('Error loading chart:', e);
+                        chartCanvas.style.opacity = '1';
+                    });
             }
 
-            initChart();
-            fetchChartData('6months');
+            const tFilter = document.getElementById('timeRangeFilter');
+            const sFilter = document.getElementById('statusFilter');
 
-            // Handle Filter Changes
-            document.querySelectorAll('.chart-filter').forEach(item => {
-                item.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const range = this.getAttribute('data-range');
-                    const rangeText = this.innerText;
-                    
-                    // Update UI
-                    document.querySelectorAll('.chart-filter').forEach(i => i.classList.remove('active'));
-                    this.classList.add('active');
-                    document.getElementById('chartFilterDropdown').innerText = rangeText;
-
-                    // Fetch Data
-                    fetchChartData(range);
-                });
-            });
+            if(tFilter && sFilter) {
+                tFilter.addEventListener('change', () => updateStaffChart(tFilter.value, sFilter.value));
+                sFilter.addEventListener('change', () => updateStaffChart(tFilter.value, sFilter.value));
+            }
         });
     </script>
 </body>

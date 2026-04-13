@@ -4,7 +4,6 @@ require_once '../config/google_auth.php';
 
 // Generate a random state variable to prevent CSRF
 $_SESSION['oauth2state'] = bin2hex(random_bytes(16));
-$_SESSION['login_role'] = $_GET['role'] ?? 'student';
 
 // Google OAuth 2.0 Endpoint
 $authorizeURL = 'https://accounts.google.com/o/oauth2/v2/auth';

@@ -9,6 +9,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 }
 
 $admin_name = isset($_SESSION['name']) ? $_SESSION['name'] : 'Admin';
+$admin_email = isset($_SESSION['email']) ? $_SESSION['email'] : '';
+$admin_initial = !empty($admin_name) ? strtoupper($admin_name[0]) : 'A';
 
 // Delete Case Logic (Scoped)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'delete_case_scoped') {
@@ -89,23 +91,27 @@ $result = $conn->query($sql);
     <!-- CSS -->
     <link href="../assets/css/style.css" rel="stylesheet">
 </head>
-<body>
+<body class="admin-portal">
     <div class="wrapper">
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar admin-sidebar">
             <div class="sidebar-header">
-                <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
+                <div class="logo">
+                    <img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 55px;">
+                </div>
             </div>
             
             <div class="sidebar-menu">
                 <div class="menu-label">Admin Menu</div>
-                <a href="dashboard.php"><i class="fas fa-chart-line"></i> Dashboard</a>
-                <a href="bulk_create_users.php"><i class="fas fa-user-plus"></i> Create Users</a>
-                <a href="users.php"><i class="fas fa-users"></i> Manage Users</a>
-                <a href="cases.php" class="active"><i class="fas fa-folder-open"></i> All Cases</a>
+                <?php $current_page = basename($_SERVER['PHP_SELF']); ?>
+                <a href="dashboard.php" class="menu-item <?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>"><i class="fas fa-chart-line"></i> Dashboard</a>
+                <a href="bulk_create_users.php" class="menu-item <?php echo ($current_page == 'bulk_create_users.php') ? 'active' : ''; ?>"><i class="fas fa-user-plus"></i> Create Users</a>
+                <a href="users.php" class="menu-item <?php echo ($current_page == 'users.php') ? 'active' : ''; ?>"><i class="fas fa-users"></i> Manage Users</a>
+                <a href="cases.php" class="menu-item <?php echo ($current_page == 'cases.php') ? 'active' : ''; ?>"><i class="fas fa-folder-open"></i> All Cases</a>
+                <a href="manage_case_types.php" class="menu-item <?php echo ($current_page == 'manage_case_types.php') ? 'active' : ''; ?>"><i class="fas fa-tags"></i> Case Types</a>
                 
                 <div class="menu-label menu-bottom-section mt-3">Account</div>
-                <a href="settings.php"><i class="fas fa-cog"></i> Settings</a>
+                <a href="settings.php" class="menu-item <?php echo ($current_page == 'settings.php') ? 'active' : ''; ?>"><i class="fas fa-cog"></i> Settings</a>
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
         </div>
@@ -120,17 +126,17 @@ $result = $conn->query($sql);
                 </div>
                 
                 <div class="user-nav ms-auto">
-                    <div class="user-profile">
-                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center">
-                            A
+                    <div class="user-profile d-flex align-items-center gap-3">
+                        <div class="text-end" style="line-height: 1.2;">
+                            <div style="font-size: 0.9rem; font-weight: 750; color: #1e293b; font-family: 'Outfit';">
+                                <?php echo ($_SESSION['role'] === 'admin' ? 'Admin | ' : '') . htmlspecialchars($admin_name); ?>
+                            </div>
+                            <div style="font-size: 0.75rem; color: #64748b; font-weight: 500;">
+                                <?php echo htmlspecialchars($admin_email); ?>
+                            </div>
                         </div>
-                        <div class="d-flex flex-column text-center" style="line-height: 1.2;">
-                            <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
-                                <?php echo htmlspecialchars($admin_name); ?>
-                            </span>
-                            <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
-                                Administrator
-                            </span>
+                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 40px; height: 40px; border-radius: 50%;">
+                            <?php echo $admin_initial; ?>
                         </div>
                     </div>
                 </div>

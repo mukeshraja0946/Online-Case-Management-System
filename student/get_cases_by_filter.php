@@ -1,151 +1,94 @@
 <?php
+ob_start();
 session_start();
 require_once '../config/db.php';
 
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
+    ob_clean();
     echo json_encode(['error' => 'Unauthorized']);
     exit();
 }
 
 $student_id = $_SESSION['user_id'];
-$range = $_GET['range'] ?? '6months';
+$range = $_GET['range'] ?? 'all';
+$status_filter = $_GET['status'] ?? 'all';
 
-// Security: Validate range input
-$allowed_ranges = ['1day', '1week', '1month', '6months', '1year', 'all'];
-if (!in_array($range, $allowed_ranges)) {
-    $range = '6months';
+// 1. Fetch all Categories from case_types table
+$types_res = $conn->query("SELECT type_name FROM case_types ORDER BY type_name");
+$categories = [];
+while($row = $types_res->fetch_assoc()) {
+    $categories[] = $row['type_name'];
+}
+
+if (empty($categories)) {
+    $categories = ['Academic', 'Hostel', 'Discipline', 'Placement', 'General'];
 }
 
 $labels = [];
-$case_types = ['Academic', 'Disciplinary', 'Hostel', 'Library', 'Other'];
-$datasets = [];
-$total_cases = 0;
+$counts = [];
+$vibrant_colors = [
+    '#ff4d4d', // Red
+    '#33cc33', // Green
+    '#3399ff', // Blue
+    '#ffcc00', // Yellow
+    '#ff6600', // Orange
+    '#7e22ce', // Purple
+    '#ec4899', // Pink
+    '#06b6d4'  // Cyan
+];
 
-// Initialize datasets
-foreach ($case_types as $type) {
-    $datasets[$type] = [
-        'label' => $type,
-        'data' => [],
-        'count' => 0
-    ];
+$where_clauses = ["s.student_id = ?"];
+$params = [$student_id];
+$types_str = "i";
+
+// Time filtering
+if ($range === 'day') {
+    $where_clauses[] = "DATE(s.submitted_at) = CURDATE()";
+} elseif ($range === 'week') {
+    $where_clauses[] = "s.submitted_at >= DATE_SUB(Now(), INTERVAL 1 WEEK)";
+} elseif ($range === 'month') {
+    $where_clauses[] = "s.submitted_at >= DATE_SUB(Now(), INTERVAL 1 MONTH)";
+} elseif ($range === 'year') {
+    $where_clauses[] = "s.submitted_at >= DATE_SUB(Now(), INTERVAL 1 YEAR)";
 }
 
-switch ($range) {
-    case '1day':
-        // Show hourly data for specified date (default today)
-        for ($i = 0; $i < 24; $i++) {
-            $hour = str_pad($i, 2, '0', STR_PAD_LEFT);
-            $labels[] = date('h A', strtotime("$hour:00"));
-            
-            foreach ($case_types as $type) {
-                $sql = "SELECT COUNT(*) as count FROM cases 
-                        WHERE student_id = ? 
-                        AND DATE(incident_date) = CURRENT_DATE() 
-                        AND HOUR(incident_date) = ? 
-                        AND case_type = ? 
-                        AND student_my_cases_visible = 1";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("iis", $student_id, $i, $type);
-                $stmt->execute();
-                $count = $stmt->get_result()->fetch_assoc()['count'];
-                
-                $datasets[$type]['data'][] = (int)$count;
-                $datasets[$type]['count'] += (int)$count;
-                $total_cases += (int)$count;
-            }
-        }
-        break;
-
-    case '1week':
-    case '1month':
-        $days = ($range === '1week') ? 6 : 29;
-        for ($i = $days; $i >= 0; $i--) {
-            $date = date('Y-m-d', strtotime("-$i days"));
-            $display_date = date(($range === '1week' ? 'D' : 'M d'), strtotime($date));
-            $labels[] = $display_date;
-            
-            foreach ($case_types as $type) {
-                $sql = "SELECT COUNT(*) as count FROM cases WHERE student_id = ? AND DATE(incident_date) = ? AND case_type = ? AND student_my_cases_visible = 1";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("iss", $student_id, $date, $type);
-                $stmt->execute();
-                $count = $stmt->get_result()->fetch_assoc()['count'];
-                
-                $datasets[$type]['data'][] = (int)$count;
-                $datasets[$type]['count'] += (int)$count;
-                $total_cases += (int)$count;
-            }
-        }
-        break;
-
-    case '6months':
-    case '1year':
-        $months = ($range === '6months') ? 5 : 11;
-        for ($i = $months; $i >= 0; $i--) {
-            $d = new DateTime('first day of this month');
-            $d->modify("-$i months");
-            $month_name = $d->format('M');
-            $month_val = (int)$d->format('m');
-            $year_val = (int)$d->format('Y');
-            $labels[] = $month_name;
-            
-            foreach ($case_types as $type) {
-                $sql = "SELECT COUNT(*) as count FROM cases 
-                        WHERE student_id = ? 
-                        AND MONTH(incident_date) = ? 
-                        AND YEAR(incident_date) = ? 
-                        AND case_type = ? 
-                        AND student_my_cases_visible = 1";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("iiis", $student_id, $month_val, $year_val, $type);
-                $stmt->execute();
-                $count = $stmt->get_result()->fetch_assoc()['count'];
-                
-                $datasets[$type]['data'][] = (int)$count;
-                $datasets[$type]['count'] += (int)$count;
-                $total_cases += (int)$count;
-            }
-        }
-        break;
-
-    case 'all':
-        $sql = "SELECT case_type, incident_date FROM cases 
-                WHERE student_id = ? AND student_my_cases_visible = 1 
-                ORDER BY incident_date ASC";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $student_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        
-        while ($row = $res->fetch_assoc()) {
-            $labels[] = date('M d, h:i A', strtotime($row['incident_date']));
-            foreach ($case_types as $type) {
-                $datasets[$type]['data'][] = ($row['case_type'] === $type) ? 1 : 0;
-                if ($row['case_type'] === $type) {
-                    $datasets[$type]['count']++;
-                }
-            }
-            $total_cases++;
-        }
-        break;
+// Status filtering
+if ($status_filter !== 'all') {
+    $where_clauses[] = "s.status = ?";
+    $params[] = $status_filter;
+    $types_str .= "s";
 }
 
-// Convert to Chart.js dataset format
-$final_datasets = [];
-foreach ($datasets as $type => $info) {
-    if ($info['count'] > 0 || $range !== 'all') { // Keep it clean
-        $final_datasets[] = [
-            'label' => $info['label'],
-            'data' => $info['data']
-        ];
-    }
+$where_str = implode(" AND ", $where_clauses);
+
+foreach ($categories as $cat) {
+    // Correct logic: Join submissions with cases to filter by category
+    $sql = "SELECT COUNT(*) as count 
+            FROM case_submissions s 
+            JOIN cases c ON s.case_id = c.id 
+            WHERE $where_str AND c.case_type = ?";
+    
+    $stmt = $conn->prepare($sql);
+    $all_params = array_merge($params, [$cat]);
+    $all_types = $types_str . "s";
+    $stmt->bind_param($all_types, ...$all_params);
+    $stmt->execute();
+    $res = $stmt->get_result()->fetch_assoc();
+    
+    $labels[] = $cat;
+    $counts[] = (int)$res['count'];
 }
 
-echo json_encode([
+$out = [
     'labels' => $labels,
-    'datasets' => $final_datasets,
-    'total' => $total_cases,
-    'case_types' => $case_types
-]);
+    'data' => $counts,
+    'colors' => array_slice($vibrant_colors, 0, count($labels)),
+    'total' => array_sum($counts)
+];
+
+if (ob_get_length()) ob_clean();
+echo json_encode($out);
+exit();
+?>

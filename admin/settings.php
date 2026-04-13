@@ -17,6 +17,26 @@ $stmt = $conn->prepare("SELECT name, email, role FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
+$admin_name = $user['name'] ?? 'Admin';
+$admin_email = $user['email'] ?? '';
+$admin_initial = !empty($admin_name) ? strtoupper($admin_name[0]) : 'A';
+
+// Ensure settings table exists
+$conn->query("CREATE TABLE IF NOT EXISTS settings (id INT PRIMARY KEY, session_timeout INT)");
+
+// Add session_unit column if it doesn't exist
+$check_col = $conn->query("SHOW COLUMNS FROM settings LIKE 'session_unit'");
+if ($check_col && $check_col->num_rows == 0) {
+    $conn->query("ALTER TABLE settings ADD COLUMN session_unit VARCHAR(20) DEFAULT 'minutes'");
+}
+
+$conn->query("INSERT IGNORE INTO settings (id, session_timeout, session_unit) VALUES (1, 30, 'minutes')");
+
+// Fetch current session timeout
+$timeout_res = $conn->query("SELECT session_timeout, session_unit FROM settings WHERE id = 1");
+$timeout_data = $timeout_res->fetch_assoc();
+$current_timeout = $timeout_data['session_timeout'] ?? 30;
+$current_unit = $timeout_data['session_unit'] ?? 'minutes';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $name = $_POST['name'];
@@ -68,6 +88,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // Refresh local user data
         $user['name'] = $name;
         $user['email'] = $email;
+        
+        // Handle Session Timeout Settings
+        if (isset($_POST['session_timeout']) && is_numeric($_POST['session_timeout']) && isset($_POST['session_unit'])) {
+            $new_timeout = (int)$_POST['session_timeout'];
+            $new_unit = $_POST['session_unit'];
+            $allowed_units = ['seconds', 'minutes', 'hours', 'days'];
+            
+            if ($new_timeout >= 1 && in_array($new_unit, $allowed_units)) {
+                $upd_timeout = $conn->prepare("UPDATE settings SET session_timeout = ?, session_unit = ? WHERE id = 1");
+                $upd_timeout->bind_param("is", $new_timeout, $new_unit);
+                $upd_timeout->execute();
+                $current_timeout = $new_timeout;
+                $current_unit = $new_unit;
+            } else {
+                $error = "Timeout must be greater than or equal to 1, and unit must be valid.";
+            }
+        }
     } else {
         $error = "Update failed: " . $conn->error;
     }
@@ -92,23 +129,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <!-- CSS -->
     <link href="../assets/css/style.css" rel="stylesheet">
 </head>
-<body>
+<body class="admin-portal">
     <div class="wrapper">
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar admin-sidebar">
             <div class="sidebar-header">
-                <h4><img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 75px;"></h4>
+                <div class="logo">
+                    <img src="../assets/img/ocmslogo.png" alt="Logo" style="height: 55px;">
+                </div>
             </div>
             
             <div class="sidebar-menu">
                 <div class="menu-label">Admin Menu</div>
-                <a href="dashboard.php"><i class="fas fa-chart-line"></i> Dashboard</a>
-                <a href="bulk_create_users.php"><i class="fas fa-user-plus"></i> Create Users</a>
-                <a href="users.php"><i class="fas fa-users"></i> Manage Users</a>
-                <a href="cases.php"><i class="fas fa-folder-open"></i> All Cases</a>
+                <?php $current_page = basename($_SERVER['PHP_SELF']); ?>
+                <a href="dashboard.php" class="menu-item <?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>"><i class="fas fa-chart-line"></i> Dashboard</a>
+                <a href="bulk_create_users.php" class="menu-item <?php echo ($current_page == 'bulk_create_users.php') ? 'active' : ''; ?>"><i class="fas fa-user-plus"></i> Create Users</a>
+                <a href="users.php" class="menu-item <?php echo ($current_page == 'users.php') ? 'active' : ''; ?>"><i class="fas fa-users"></i> Manage Users</a>
+                <a href="cases.php" class="menu-item <?php echo ($current_page == 'cases.php') ? 'active' : ''; ?>"><i class="fas fa-folder-open"></i> All Cases</a>
+                <a href="manage_case_types.php" class="menu-item <?php echo ($current_page == 'manage_case_types.php') ? 'active' : ''; ?>"><i class="fas fa-tags"></i> Case Types</a>
                 
                 <div class="menu-label menu-bottom-section mt-3">Account</div>
-                <a href="settings.php" class="active"><i class="fas fa-cog"></i> Settings</a>
+                <a href="settings.php" class="menu-item <?php echo ($current_page == 'settings.php') ? 'active' : ''; ?>"><i class="fas fa-cog"></i> Settings</a>
                 <a href="../auth/logout.php" class="logout-link"><i class="fas fa-sign-out-alt"></i> Log Out</a>
             </div>
         </div>
@@ -123,17 +164,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 
                 <div class="user-nav ms-auto">
-                    <div class="user-profile">
-                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center">
-                            A
+                    <div class="user-profile d-flex align-items-center gap-3">
+                        <div class="text-end" style="line-height: 1.2;">
+                            <div style="font-size: 0.9rem; font-weight: 750; color: #1e293b; font-family: 'Outfit';">
+                                <?php echo ($_SESSION['role'] === 'admin' ? 'Admin | ' : '') . htmlspecialchars($admin_name); ?>
+                            </div>
+                            <div style="font-size: 0.75rem; color: #64748b; font-weight: 500;">
+                                <?php echo htmlspecialchars($admin_email); ?>
+                            </div>
                         </div>
-                        <div class="d-flex flex-column text-center" style="line-height: 1.2;">
-                            <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-color);">
-                                <?php echo htmlspecialchars($user['name']); ?>
-                            </span>
-                            <span style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
-                                Administrator
-                            </span>
+                        <div class="avatar shadow-sm bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 40px; height: 40px; border-radius: 50%;">
+                            <?php echo $admin_initial; ?>
                         </div>
                     </div>
                 </div>
@@ -170,6 +211,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                     <input type="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" class="form-control" required>
                                 </div>
                                 
+                                <hr class="my-4">
+
+                                <!-- Global System Settings -->
+                                <h5 class="fw-bold mb-3"><i class="fas fa-sliders-h me-2 text-warning"></i> System Settings</h5>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Auto Logout Timeout</label>
+                                        <div class="input-group">
+                                            <input type="number" name="session_timeout" value="<?php echo $current_timeout; ?>" class="form-control" min="1" required style="max-width: 120px;">
+                                            <select name="session_unit" class="form-select" style="max-width: 150px;">
+                                                <option value="seconds" <?php if($current_unit == 'seconds') echo 'selected'; ?>>Seconds</option>
+                                                <option value="minutes" <?php if($current_unit == 'minutes') echo 'selected'; ?>>Minutes</option>
+                                                <option value="hours" <?php if($current_unit == 'hours') echo 'selected'; ?>>Hours</option>
+                                                <option value="days" <?php if($current_unit == 'days') echo 'selected'; ?>>Days</option>
+                                            </select>
+                                        </div>
+                                        <small class="text-muted d-block mt-2">Users inactive for this duration will be automatically logged out.</small>
+                                    </div>
+                                </div>
+
                                 <hr class="my-4">
                                 
                                 <h5 class="fw-bold mb-3"><i class="fas fa-lock me-2 text-danger"></i> Change Password</h5>

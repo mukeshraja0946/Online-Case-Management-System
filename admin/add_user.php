@@ -19,6 +19,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $role = $_POST['role'];
     $roll_no = ($role == 'student') ? $_POST['roll_no'] : NULL;
     $staff_id = ($role == 'staff') ? $_POST['staff_id'] : NULL;
+    $department = ($role == 'admin') ? NULL : $_POST['department'];
+
+    $profile_photo = NULL;
+    if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] == 0) {
+        $upload_dir = "../uploads/profile/";
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0777, true);
+        }
+        $file_info = pathinfo($_FILES['profile_photo']['name']);
+        $ext = strtolower($file_info['extension']);
+        $allowed = ['jpg', 'jpeg', 'png', 'gif'];
+        if (in_array($ext, $allowed)) {
+            $new_file_name = "profile_" . time() . "_" . rand(1000, 9999) . "." . $ext;
+            if (move_uploaded_file($_FILES['profile_photo']['tmp_name'], $upload_dir . $new_file_name)) {
+                $profile_photo = $new_file_name;
+            } else {
+                $error_msg = "Failed to upload profile picture.";
+            }
+        } else {
+            $error_msg = "Invalid profile picture type. Only JPG, PNG, GIF allowed.";
+        }
+    }
 
     // Check if email already exists
     $check_email = "SELECT id FROM users WHERE email = ?";
@@ -58,9 +80,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     } elseif (!$staff_valid && empty($error_msg)) {
         // Error already set above
     } elseif (empty($error_msg)) {
-        $sql = "INSERT INTO users (name, email, password, role, roll_no, staff_id) VALUES (?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO users (name, email, password, role, roll_no, staff_id, department, profile_photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("ssssss", $name, $email, $password, $role, $roll_no, $staff_id);
+        $stmt->bind_param("ssssssss", $name, $email, $password, $role, $roll_no, $staff_id, $department, $profile_photo);
 
         if ($stmt->execute()) {
             header("Location: dashboard.php?msg=" . urlencode("User created successfully!"));
@@ -72,7 +94,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 }
 
 // Get Role from URL
-$preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 'staff']) ? $_GET['role'] : 'student';
+$preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 'staff', 'admin']) ? $_GET['role'] : 'student';
 ?>
 
 <!DOCTYPE html>
@@ -197,7 +219,7 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
             padding: 30px 40px;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: flex-start;
             overflow-y: auto;
         }
 
@@ -239,6 +261,28 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
             outline: none;
         }
 
+        .file-custom {
+            padding: 9px 12px 9px 40px;
+            font-size: 0.85rem;
+        }
+        
+        .file-custom::file-selector-button {
+            border: none;
+            background: var(--primary-light);
+            color: var(--primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-family: inherit;
+            margin-right: 12px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        
+        .file-custom::file-selector-button:hover {
+            background: #dbeafe;
+        }
+
         /* Segmented Role Selector */
         .role-selector {
             display: flex;
@@ -268,7 +312,7 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
             position: absolute; 
             top: 4px; 
             left: 4px; 
-            width: calc(50% - 4px); 
+            width: calc(33.33% - 4px); 
             height: calc(100% - 8px);
             background: white; 
             border-radius: 10px; 
@@ -277,6 +321,7 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
             z-index: 1;
         }
         .role-selector[data-role="staff"] .role-slider { transform: translateX(100%); }
+        .role-selector[data-role="admin"] .role-slider { transform: translateX(200%); }
 
         .btn-submit {
             width: 100%;
@@ -342,7 +387,7 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
                 <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo $success_msg; ?></div>
             <?php endif; ?>
 
-            <form method="POST" action="">
+            <form method="POST" action="" enctype="multipart/form-data">
                 <label class="form-label">Full Name</label>
                 <div class="input-group-custom">
                     <i class="fas fa-user"></i>
@@ -360,6 +405,7 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
                     <div class="role-slider"></div>
                     <div class="role-option <?php echo $preselected_role == 'student' ? 'active' : ''; ?>" onclick="updateRole('student')">Student</div>
                     <div class="role-option <?php echo $preselected_role == 'staff' ? 'active' : ''; ?>" onclick="updateRole('staff')">Staff</div>
+                    <div class="role-option <?php echo $preselected_role == 'admin' ? 'active' : ''; ?>" onclick="updateRole('admin')">Admin</div>
                 </div>
                 <input type="hidden" name="role" id="roleInput" value="<?php echo $preselected_role; ?>">
 
@@ -380,10 +426,24 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
                     </div>
                 </div>
 
+                <div id="deptDiv" style="display: <?php echo $preselected_role != 'admin' ? 'block' : 'none'; ?>;">
+                    <label class="form-label">Department</label>
+                    <div class="input-group-custom">
+                        <i class="fas fa-building"></i>
+                        <input type="text" name="department" class="form-control-custom" placeholder="e.g. Computer Science">
+                    </div>
+                </div>
+
                 <label class="form-label">Password</label>
                 <div class="input-group-custom">
                     <i class="fas fa-lock"></i>
                     <input type="password" name="password" class="form-control-custom" required>
+                </div>
+
+                <label class="form-label">Profile Picture (Optional)</label>
+                <div class="input-group-custom">
+                    <i class="fas fa-image"></i>
+                    <input type="file" name="profile_photo" class="form-control-custom file-custom" accept="image/*">
                 </div>
 
                 <button type="submit" class="btn-submit">All Done, Create User</button>
@@ -397,7 +457,7 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
             const input = document.getElementById('roleInput');
             const options = selector.querySelectorAll('.role-option');
             const rollNoDiv = document.getElementById('rollNoDiv');
-            const staffIdDiv = document.getElementById('staffIdDiv');
+            const deptDiv = document.getElementById('deptDiv');
             
             // Update UI
             selector.setAttribute('data-role', role);
@@ -407,9 +467,15 @@ $preselected_role = isset($_GET['role']) && in_array($_GET['role'], ['student', 
             if (role === 'student') {
                 rollNoDiv.style.display = 'block';
                 staffIdDiv.style.display = 'none';
-            } else {
+                deptDiv.style.display = 'block';
+            } else if (role === 'staff') {
                 rollNoDiv.style.display = 'none';
                 staffIdDiv.style.display = 'block';
+                deptDiv.style.display = 'block';
+            } else {
+                rollNoDiv.style.display = 'none';
+                staffIdDiv.style.display = 'none';
+                deptDiv.style.display = 'none';
             }
             
             // Update active class

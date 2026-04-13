@@ -399,10 +399,10 @@ $page_title = $is_view_mode ? 'My Profile' : 'Settings';
                 <div class="menu-label">Menu</div>
                 <?php if ($user['role'] == 'student'): ?>
                     <a href="../student/dashboard.php"><i class="fas fa-th-large"></i> Dashboard</a>
-                    <a href="../student/add_case.php"><i class="fas fa-plus-circle"></i> Add Cases</a>
-                    <a href="../student/my_cases.php"><i class="fas fa-file-alt"></i> My Cases</a>
-                    <a href="../student/approved_cases.php"><i class="fas fa-check-circle"></i> Approved Cases</a>
-                    <a href="../student/rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected Cases</a>
+                    <a href="../student/available_cases.php"><i class="fas fa-list"></i> Available Cases</a>
+                    <a href="../student/my_cases.php"><i class="fas fa-file-alt"></i> My Submissions</a>
+                    <a href="../student/approved_cases.php"><i class="fas fa-check-circle"></i> Approved Submissions</a>
+                    <a href="../student/rejected_cases.php"><i class="fas fa-times-circle"></i> Rejected Submissions</a>
                 <?php else: ?>
                     <a href="../staff/dashboard.php"><i class="fas fa-th-large"></i> Dashboard</a>
                     <a href="../staff/received_cases.php"><i class="fas fa-inbox"></i> Received Cases</a>

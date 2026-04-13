@@ -5,30 +5,29 @@ require_once '../config/db.php';
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = $_POST['email'];
     $password = $_POST['password'];
-    $role = $_POST['role'];
 
-    $sql = "SELECT id, name, password, role, roll_no, staff_id, profile_photo FROM users WHERE email = ? AND role = ?";
+    // Query user by email ONLY to get role and other details
+    $sql = "SELECT id, name, password, role, roll_no, staff_id, profile_photo FROM users WHERE email = ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ss", $email, $role);
+    $stmt->bind_param("s", $email);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($result->num_rows == 1) {
         $user = $result->fetch_assoc();
         $verify = password_verify($password, $user['password']);
-        file_put_contents('../debug_login.txt', date('Y-m-d H:i:s') . " - Login: Email=$email. Verify=" . ($verify ? 'TRUE' : 'FALSE') . ". Stored Hash=" . substr($user['password'], 0, 10) . "...\n", FILE_APPEND);
+        file_put_contents('../debug_login.txt', date('Y-m-d H:i:s') . " - Login: Email=$email. Verify=" . ($verify ? 'TRUE' : 'FALSE') . ". Role=" . $user['role'] . "\n", FILE_APPEND);
         
         if ($verify) {
+            session_regenerate_id(true);
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
+            $_SESSION['email'] = $email;
             $_SESSION['profile_photo'] = $user['profile_photo'];
 
             // Update last login timestamp
             $login_update = $conn->query("UPDATE users SET last_login = NOW() WHERE id = " . $user['id']);
-            if (!$login_update) {
-                file_put_contents('../debug_login.txt', date('Y-m-d H:i:s') . " - Error updating last_login: " . $conn->error . "\n", FILE_APPEND);
-            }
 
             if ($user['role'] == 'student') {
                 $_SESSION['roll_no'] = $user['roll_no'];
@@ -38,15 +37,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $redirect = "../staff/dashboard.php";
             } elseif ($user['role'] == 'admin') {
                 $redirect = "../admin/dashboard.php";
+            } else {
+                $error = "Unauthorized role!";
             }
 
-            header("Location: " . $redirect);
-            exit();
+            if (isset($redirect)) {
+                header("Location: " . $redirect);
+                exit();
+            }
         } else {
             $error = "Invalid password!";
         }
     } else {
-        $error = "User not found or role mismatch!";
+        $error = "User not found!";
     }
 }
 ?>
@@ -381,18 +384,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <input type="password" name="password" class="form-control-custom" required>
                 </div>
 
-                <label class="form-label">Sign in as</label>
-                <div class="role-selector" id="roleSelector" data-role="student">
-                    <div class="role-slider"></div>
-                    <div class="role-option active" onclick="setRole('student')">Student</div>
-                    <div class="role-option" onclick="setRole('staff')">Staff</div>
-                    <div class="role-option" onclick="setRole('admin')">Admin</div>
-                </div>
-                <input type="hidden" name="role" id="roleInput" value="student">
-
                 <button type="submit" class="btn-submit">Login</button>
                 
-                <a href="#" onclick="window.location.href='google_login.php?role=' + document.getElementById('roleInput').value; return false;" class="btn-google">
+                <a href="google_login.php" class="btn-google">
                     <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20px" height="20px">
                         <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
                         <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
@@ -408,37 +402,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
         </div>
     </div>
-    <script>
-        function setRole(role) {
-            const selector = document.getElementById('roleSelector');
-            const input = document.getElementById('roleInput');
-            const options = selector.querySelectorAll('.role-option');
-            
-            // Adjust slider width based on role count (3 roles now)
-            const slider = selector.querySelector('.role-slider');
-            slider.style.width = 'calc(33.33% - 4px)';
 
-            // Update UI
-            selector.setAttribute('data-role', role);
-            input.value = role;
-
-            if (role === 'student') {
-                slider.style.transform = 'translateX(0%)';
-            } else if (role === 'staff') {
-                slider.style.transform = 'translateX(100%)';
-            } else if (role === 'admin') {
-                slider.style.transform = 'translateX(200%)';
-            }
-            
-            // Update active class
-            options.forEach(opt => {
-                if(opt.innerText.toLowerCase() === role) {
-                    opt.classList.add('active');
-                } else {
-                    opt.classList.remove('active');
-                }
-            });
-        }
-    </script>
 </body>
 </html>
